@@ -148,7 +148,7 @@ export const GROQ_OPENAI_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          outdoorAqi: { type: 'number', description: 'Current outdoor US AQI reading.' },
+          outdoorAqi: { type: 'number', description: 'Current outdoor US AQI reading (optional, defaults to context AQI).' },
           outdoorPm25: { type: 'number', description: 'Current outdoor PM2.5 particulate concentration in µg/m³.' },
           housingContext: {
             type: 'string',
@@ -156,7 +156,7 @@ export const GROQ_OPENAI_TOOLS = [
             description: 'Optional residential context.',
           },
         },
-        required: ['outdoorAqi'],
+        required: [],
       },
     },
   },
@@ -239,6 +239,38 @@ export const GROQ_OPENAI_TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'getCurrentEnvironment',
+      description:
+        'Alias for analyzeEnvironmentalConditions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          currentAqi: { type: 'number', description: 'Current US AQI reading.' },
+          pm25: { type: 'number', description: 'Current PM2.5 in µg/m³.' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getCurrentAcuteAirQuality',
+      description:
+        'Alias for getCurrentAirQuality.',
+      parameters: {
+        type: 'object',
+        properties: {
+          latitude: { type: 'number', description: 'Latitude (-90 to 90).' },
+          longitude: { type: 'number', description: 'Longitude (-180 to 180).' },
+        },
+        required: [],
+      },
+    },
+  },
 ]
 
 // -------------------------------------------------------------
@@ -248,19 +280,35 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   analyzeenvironmentalconditions: 'analyzeEnvironmentalConditions',
   analyzeenvironmentalcondition: 'analyzeEnvironmentalConditions',
   analyze_environmental_conditions: 'analyzeEnvironmentalConditions',
+  analyze_environmental_condition: 'analyzeEnvironmentalConditions',
+  getcurrentenvironment: 'analyzeEnvironmentalConditions',
+  get_current_environment: 'analyzeEnvironmentalConditions',
+  getenvironmentconditions: 'analyzeEnvironmentalConditions',
+  get_environment_conditions: 'analyzeEnvironmentalConditions',
   generatedailyroutine: 'generateDailyRoutine',
   generatedailyroutines: 'generateDailyRoutine',
   generate_daily_routine: 'generateDailyRoutine',
+  getdailyroutine: 'generateDailyRoutine',
+  get_daily_routine: 'generateDailyRoutine',
   getcurrentairquality: 'getCurrentAirQuality',
+  getcurrentacuteairquality: 'getCurrentAirQuality',
   get_current_air_quality: 'getCurrentAirQuality',
+  getairquality: 'getCurrentAirQuality',
+  get_air_quality: 'getCurrentAirQuality',
   getairqualityforecast: 'getAirQualityForecast',
   get_air_quality_forecast: 'getAirQualityForecast',
+  getforecast: 'getAirQualityForecast',
+  get_forecast: 'getAirQualityForecast',
   getindoorairguidance: 'getIndoorAirGuidance',
   get_indoor_air_guidance: 'getIndoorAirGuidance',
+  getindoorguidance: 'getIndoorAirGuidance',
+  get_indoor_guidance: 'getIndoorAirGuidance',
   comparesustainablealternatives: 'compareSustainableAlternatives',
   compare_sustainable_alternatives: 'compareSustainableAlternatives',
   calculateenvironmentalimpact: 'calculateEnvironmentalImpact',
   calculate_environmental_impact: 'calculateEnvironmentalImpact',
+  calculateemissions: 'calculateEnvironmentalImpact',
+  calculate_emissions: 'calculateEnvironmentalImpact',
 }
 
 export function canonicalizeToolName(name: string): string {
@@ -312,7 +360,7 @@ export async function executeDeterministicTool(rawName: string, rawArgs: Record<
     }
 
     case 'getIndoorAirGuidance': {
-      const outdoorAqi = Number(rawArgs.outdoorAqi)
+      const outdoorAqi = Number(rawArgs.outdoorAqi || 100)
       const outdoorPm25 = typeof rawArgs.outdoorPm25 === 'number' ? rawArgs.outdoorPm25 : null
       const housingContext = rawArgs.housingContext ? (String(rawArgs.housingContext) as any) : undefined
       result = getIndoorAirGuidance({
@@ -394,9 +442,17 @@ export async function runGroqOrchestration(
   while (round < maxRounds) {
     round++
 
-    // On round 1, enable tool calling. Once tools have executed, force final synthesis (tool_choice: 'none')
-    // to prevent repetitive tool queries from exceeding token limits.
-    const toolChoice = round === 1 ? 'auto' : 'none'
+    const bodyPayload: Record<string, unknown> = {
+      model: modelName,
+      messages,
+      temperature: 0.2,
+      max_tokens: 800,
+    }
+
+    if (round === 1) {
+      bodyPayload.tools = GROQ_OPENAI_TOOLS
+      bodyPayload.tool_choice = 'auto'
+    }
 
     let response: Response | null = null
     let lastFetchError: Error | null = null
@@ -410,14 +466,7 @@ export async function runGroqOrchestration(
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
           },
-          body: JSON.stringify({
-            model: modelName,
-            messages,
-            tools: GROQ_OPENAI_TOOLS,
-            tool_choice: toolChoice,
-            temperature: 0.2,
-            max_tokens: 800,
-          }),
+          body: JSON.stringify(bodyPayload),
           signal: AbortSignal.timeout(15000),
         })
         break
