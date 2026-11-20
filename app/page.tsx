@@ -277,10 +277,44 @@ export default function Page() {
           : 'Reduce prolonged outdoor exertion and consider moving strenuous activity indoors. Follow local public-health alerts; this general guidance is not medical advice.'
 
   return <main className="airwise">
-    <header className="topbar"><a className="brand" href="#"><span className="brand-mark"><Wind size={19} /></span><span>AIRWISE <b>AI</b></span></a><span className="divider" /><span className="crumb">Live Air Quality Map</span><div className="top-actions"><span className="demo-pill"><i />{airQuality ? 'Current API estimate' : 'Location-aware air quality'}</span><span className="avatar">AW</span></div></header>
+    <header className="topbar">
+      <div className="topbar-inner">
+        <div className="brand-group">
+          <a className="brand" href="#">
+            <span className="brand-mark"><Wind size={18} /></span>
+            <span>AIRWISE <b>AI</b></span>
+          </a>
+          <span className="divider" />
+          <span className="crumb">Live Air Quality Map</span>
+        </div>
+        <div className="top-actions">
+          <span className="demo-pill"><i />{airQuality ? 'Current API estimate' : 'Location-aware air quality'}</span>
+          <span className="avatar">AW</span>
+        </div>
+      </div>
+    </header>
     <div className="page-wrap">
-      <div className="intro"><div><div className="kicker"><span /> ENVIRONMENTAL INTELLIGENCE</div><h1>Air quality explorer<span>.</span></h1><p>Local air quality, pollutant levels, and health guidance.</p></div><span className="city"><MapPin size={15} />{location?.name ?? 'Location not set'}</span></div>
-      <div className="location-banner" role="status" aria-live="polite"><div><strong>{locationStatus === 'detecting' ? 'Finding your location' : location ? 'Your map is location-aware' : 'Set your location'}</strong><p>{locationStatus === 'detecting' ? 'Allow location access when your browser asks. Coordinates are sent to geocoding and air-quality services for results; AIRWISE does not save them.' : locationMessage}</p></div><button className="locate-action" onClick={detectLocation} disabled={locationStatus === 'detecting'}><Crosshair size={15} />{locationStatus === 'detecting' ? 'Detecting…' : 'Find my location'}</button></div>
+      <div className="intro">
+        <div className="intro-copy">
+          <div className="kicker"><span /> ENVIRONMENTAL INTELLIGENCE</div>
+          <h1>Air quality explorer<span>.</span></h1>
+          <p>Local air quality, pollutant levels, and health guidance.</p>
+        </div>
+        <div className="city">
+          <MapPin size={15} />
+          <span>{location?.name ?? 'Location not set'}</span>
+        </div>
+      </div>
+      <div className="location-banner" role="status" aria-live="polite">
+        <div className="location-banner-text">
+          <strong>{locationStatus === 'detecting' ? 'Finding your location' : location ? 'Your map is location-aware' : 'Set your location'}</strong>
+          <p>{locationStatus === 'detecting' ? 'Allow location access when your browser asks. Coordinates are sent to geocoding and air-quality services for results; AIRWISE does not save them.' : locationMessage}</p>
+        </div>
+        <button className="locate-action" onClick={detectLocation} disabled={locationStatus === 'detecting'}>
+          <Crosshair size={14} />
+          <span>{locationStatus === 'detecting' ? 'Detecting…' : 'Find my location'}</span>
+        </button>
+      </div>
       {/* RESPONSIVE TWO-COLUMN DASHBOARD LAYOUT */}
       <div className="app-dashboard-layout">
         {/* LEFT COLUMN: Main Environmental Workspace */}
