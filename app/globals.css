@@ -585,12 +585,13 @@
 .is-assistant .chat-bubble-body{background:#ffffff;border:1px solid #d9e5da;color:#1e352b;border-bottom-left-radius:2px;box-shadow:0 1px 4px #1b382708}
 .chat-thinking-indicator{display:flex;align-items:center;gap:8px;color:#279c83;font-size:12px;font-weight:600;padding:4px 0}
 
-/* Message Input Form */
-.assistant-input-box{display:flex;align-items:center;gap:10px;background:#ffffff;border:1px solid #cadbce;border-radius:10px;padding:6px 8px 6px 14px;box-shadow:0 2px 8px #1938260a;transition:border-color .18s}
+/* Message Input Form & Unified Composer */
+.assistant-input-box{display:flex;align-items:center;gap:8px;background:#ffffff;border:1px solid #cadbce;border-radius:10px;padding:4px 5px 4px 14px;min-height:46px;box-shadow:0 2px 8px #1938260a;transition:border-color .18s,box-shadow .18s;box-sizing:border-box;width:100%}
 .assistant-input-box:focus-within{border-color:#279c83;box-shadow:0 0 0 3px #279c8322}
-.assistant-input-box input{flex:1;min-width:0;border:0;outline:none;background:transparent;font-size:13px;color:#1b392a}
-.assistant-input-box input::placeholder{color:#7d9185}
-.btn-send-message{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:#174c3c;color:#ffffff;border:0;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:background .18s;flex-shrink:0}
+.assistant-input-box input{flex:1;min-width:0;height:38px;line-height:38px;border:0;outline:none;background:transparent;font-size:13px;color:#1b392a;padding:0;margin:0;display:block}
+.assistant-input-box input::placeholder{color:#7d9185;line-height:normal}
+.btn-send-message{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 16px;background:#174c3c;color:#ffffff;border:0;border-radius:7px;font-size:12px;font-weight:700;line-height:1;cursor:pointer;transition:background .18s;flex-shrink:0;margin:0;box-sizing:border-box}
+.btn-send-message svg{display:block;flex-shrink:0}
 .btn-send-message:hover:not(:disabled){background:#205b47}
 .btn-send-message:disabled{opacity:.5;cursor:not-allowed}
 .assistant-footer-disclaimer{display:flex;align-items:center;gap:7px;font-size:11px;color:#6b8073;line-height:1.45;margin-top:12px;padding-top:10px;border-top:1px solid #e5eee5}
