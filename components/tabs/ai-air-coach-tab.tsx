@@ -435,14 +435,6 @@ export function AIAirCoachTab({
           )}
         </button>
       </form>
-
-      {/* Bottom Medical & Sensor Notice */}
-      <div className="assistant-footer-disclaimer">
-        <ShieldCheck size={14} />
-        <span>
-          AIRWISE Copilot synthesizes data via Google Gemini 2.5 Flash and deterministic environmental tools. Indoor advice is calculated from ambient infiltration physics; no indoor sensors are attached. Not clinical medical advice.
-        </span>
-      </div>
     </div>
   )
 }
