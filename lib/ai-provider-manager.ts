@@ -416,7 +416,7 @@ export async function runGroqOrchestration(
             tools: GROQ_OPENAI_TOOLS,
             tool_choice: toolChoice,
             temperature: 0.2,
-            max_tokens: 1200,
+            max_tokens: 800,
           }),
           signal: AbortSignal.timeout(15000),
         })
