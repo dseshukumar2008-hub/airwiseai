@@ -45,6 +45,7 @@ export type AssistantContext = {
     windDirectionDeg?: number | null
   } | null
   userQuery?: string | null
+  simulateGeminiQuota?: boolean
 }
 
 export const SYSTEM_INSTRUCTION = [
@@ -209,13 +210,32 @@ export const GROQ_OPENAI_TOOLS = [
       parameters: {
         type: 'object',
         properties: {
-          currentAqi: { type: 'number', description: 'Current US AQI reading.' },
+          currentAqi: { type: 'number', description: 'Current US AQI reading (optional, defaults to context AQI).' },
           pm25: { type: 'number', description: 'Current PM2.5 in µg/m³.' },
           temperatureC: { type: 'number', description: 'Ambient temperature in Celsius.' },
           relativeHumidityPercent: { type: 'number', description: 'Relative humidity in percent.' },
           windSpeedKmh: { type: 'number', description: 'Wind speed in km/h.' },
         },
-        required: ['currentAqi'],
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'analyzeEnvironmentalCondition',
+      description:
+        'Alias for analyzeEnvironmentalConditions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          currentAqi: { type: 'number', description: 'Current US AQI reading (optional, defaults to context AQI).' },
+          pm25: { type: 'number', description: 'Current PM2.5 in µg/m³.' },
+          temperatureC: { type: 'number', description: 'Ambient temperature in Celsius.' },
+          relativeHumidityPercent: { type: 'number', description: 'Relative humidity in percent.' },
+          windSpeedKmh: { type: 'number', description: 'Wind speed in km/h.' },
+        },
+        required: [],
       },
     },
   },
@@ -224,7 +244,34 @@ export const GROQ_OPENAI_TOOLS = [
 // -------------------------------------------------------------
 // Unified Deterministic Tool Execution Engine with Caching
 // -------------------------------------------------------------
-export async function executeDeterministicTool(name: string, rawArgs: Record<string, unknown>): Promise<unknown> {
+const TOOL_NAME_ALIASES: Record<string, string> = {
+  analyzeenvironmentalconditions: 'analyzeEnvironmentalConditions',
+  analyzeenvironmentalcondition: 'analyzeEnvironmentalConditions',
+  analyze_environmental_conditions: 'analyzeEnvironmentalConditions',
+  generatedailyroutine: 'generateDailyRoutine',
+  generatedailyroutines: 'generateDailyRoutine',
+  generate_daily_routine: 'generateDailyRoutine',
+  getcurrentairquality: 'getCurrentAirQuality',
+  get_current_air_quality: 'getCurrentAirQuality',
+  getairqualityforecast: 'getAirQualityForecast',
+  get_air_quality_forecast: 'getAirQualityForecast',
+  getindoorairguidance: 'getIndoorAirGuidance',
+  get_indoor_air_guidance: 'getIndoorAirGuidance',
+  comparesustainablealternatives: 'compareSustainableAlternatives',
+  compare_sustainable_alternatives: 'compareSustainableAlternatives',
+  calculateenvironmentalimpact: 'calculateEnvironmentalImpact',
+  calculate_environmental_impact: 'calculateEnvironmentalImpact',
+}
+
+export function canonicalizeToolName(name: string): string {
+  if (!name) return 'unknown'
+  const trimmed = name.trim().replace(/\s+/g, '')
+  const lower = trimmed.toLowerCase()
+  return TOOL_NAME_ALIASES[lower] || trimmed
+}
+
+export async function executeDeterministicTool(rawName: string, rawArgs: Record<string, unknown>): Promise<unknown> {
+  const name = canonicalizeToolName(rawName)
   const cacheKey = `${name}:${JSON.stringify(rawArgs)}`
   const cached = getCachedToolResult(cacheKey)
   if (cached) return cached
@@ -342,27 +389,49 @@ export async function runGroqOrchestration(
   ]
 
   let round = 0
-  const maxRounds = 5
+  const maxRounds = 3
 
   while (round < maxRounds) {
     round++
 
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages,
-        tools: GROQ_OPENAI_TOOLS,
-        tool_choice: 'auto',
-        temperature: 0.2,
-        max_tokens: 1200,
-      }),
-      signal: AbortSignal.timeout(12000),
-    })
+    // On round 1, enable tool calling. Once tools have executed, force final synthesis (tool_choice: 'none')
+    // to prevent repetitive tool queries from exceeding token limits.
+    const toolChoice = round === 1 ? 'auto' : 'none'
+
+    let response: Response | null = null
+    let lastFetchError: Error | null = null
+
+    // Transient network retry with backoff (e.g. ECONNRESET or transient socket drops)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages,
+            tools: GROQ_OPENAI_TOOLS,
+            tool_choice: toolChoice,
+            temperature: 0.2,
+            max_tokens: 1200,
+          }),
+          signal: AbortSignal.timeout(15000),
+        })
+        break
+      } catch (netErr: any) {
+        lastFetchError = netErr
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 800))
+        }
+      }
+    }
+
+    if (!response) {
+      throw lastFetchError || new Error('Network failure communicating with Groq API.')
+    }
 
     if (!response.ok) {
       const errText = await response.text()
@@ -395,7 +464,7 @@ export async function runGroqOrchestration(
       return { text: finalText, toolRounds: round - 1 }
     }
 
-    // Execute tool calls in parallel with argument parsing validation
+    // Execute tool calls in parallel with canonicalization and argument parsing validation
     const toolResults = await Promise.all(
       toolCalls.map(async (tc: any) => {
         const fnName = tc.function?.name || 'unknown'
@@ -461,7 +530,10 @@ export async function orchestrateDualAIProvider(
   let geminiFailedDueToQuotaOrNetwork = false
   let geminiErrorMessage = ''
 
-  if (geminiApiKey) {
+  if (context.simulateGeminiQuota) {
+    geminiFailedDueToQuotaOrNetwork = true
+    geminiErrorMessage = 'Simulated Gemini HTTP 429 Quota Exhausted'
+  } else if (geminiApiKey) {
     try {
       const ai = new GoogleGenAI({ apiKey: geminiApiKey, apiVersion: 'v1beta' })
       const modelName = 'gemini-2.5-flash'
@@ -553,7 +625,9 @@ export async function orchestrateDualAIProvider(
   // 2. ATTEMPT SECONDARY FALLBACK: Groq API
   if (groqApiKey && (geminiFailedDueToQuotaOrNetwork || geminiAuthError)) {
     try {
+      console.log(`[AI Provider Manager] Primary Gemini unavailable (${geminiErrorMessage || 'Auth/Quota'}). Attempting Groq fallback (${groqModel})...`)
       const groqRes = await runGroqOrchestration(groqApiKey, groqModel, userPrompt)
+      console.log(`[AI Provider Manager] Groq fallback succeeded with ${groqRes.toolRounds} tool round(s).`)
       return {
         provider: 'groq',
         model: groqModel,
@@ -563,7 +637,7 @@ export async function orchestrateDualAIProvider(
         providerNotice: 'Served via Groq fallback copilot while primary Gemini quota resets.',
       }
     } catch (groqErr: any) {
-      // Both failed; continue to deterministic fallback
+      console.error(`[AI Provider Manager] Groq fallback failed: ${groqErr?.message || groqErr}. Falling back to deterministic engine.`)
     }
   }
 

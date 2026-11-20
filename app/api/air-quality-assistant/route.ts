@@ -139,6 +139,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    const simulateGeminiQuota =
+      request.headers.get('x-simulate-gemini-quota') === 'true' ||
+      (typeof fields.simulateGeminiQuota === 'boolean' && fields.simulateGeminiQuota)
+
     const result = await orchestrateDualAIProvider({
       locationName: validated.locationName,
       latitude: validated.latitude,
@@ -152,6 +156,7 @@ export async function POST(request: Request) {
       forecast: validated.forecast,
       weather: validated.weather,
       userQuery: validated.userQuery,
+      simulateGeminiQuota,
     })
 
     const wantsStream = validated.stream !== false
