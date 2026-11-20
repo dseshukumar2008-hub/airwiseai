@@ -332,8 +332,7 @@ export default function Page() {
           <span className="crumb">Live Air Quality Map</span>
         </div>
         <div className="top-actions">
-          <span className="demo-pill"><i />{airQuality ? 'Current API estimate' : 'Location-aware air quality'}</span>
-          <span className="avatar">AW</span>
+          <span className="avatar" title="User Profile">AW</span>
         </div>
       </div>
     </header>
