@@ -420,32 +420,40 @@ export default function Page() {
                 <GoogleMap stations={mapStations} selectedId="" layer={layer} satellite={satellite} onSelect={() => undefined} center={location ? { lat: location.latitude, lng: location.longitude } : null} reading={airQuality && aqi !== undefined ? { aqi, pm25: selectedReading?.pm25 ?? null, pm10: selectedReading?.pm10 ?? null, label: forecast ? `Open-Meteo +${forecast}h forecast` : 'Coordinate-based current estimate' } : null} />
                 <div className="map-top">
                   <div className="searchbox">
-                    <Search size={16} />
-                    <form onSubmit={handleFormSubmit}>
+                    <form onSubmit={handleFormSubmit} className="searchbox-form">
+                      <span className="searchbox-icon" aria-hidden="true">
+                        <Search size={15} />
+                      </span>
                       <input
                         ref={searchInputRef}
                         aria-label="Search for a city, town, locality or postal code"
                         value={query}
                         onChange={(event) => handleQueryChange(event.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Search city, town, or locality…"
+                        placeholder="Search city, town, district, locality…"
                         autoComplete="off"
+                        spellCheck={false}
                       />
-                      <button type="submit" aria-label="Search locations" disabled={searchStatus === 'loading'}>
-                        {searchStatus === 'loading' ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                      </button>
+                      {searchStatus === 'loading' && (
+                        <span className="searchbox-spinner" aria-hidden="true">
+                          <Loader2 size={13} className="animate-spin" />
+                        </span>
+                      )}
                     </form>
                     {query && (
                       <button
+                        type="button"
+                        className="searchbox-clear"
                         onClick={() => {
                           setQuery('')
                           setSearchResults([])
                           setSearchStatus('idle')
                           setSearchMessage('')
+                          if (searchInputRef.current) searchInputRef.current.focus()
                         }}
-                        aria-label="Clear search"
+                        aria-label="Clear search query"
                       >
-                        <X size={14} />
+                        <X size={13} />
                       </button>
                     )}
                     {(searchResults.length > 0 || searchStatus === 'loading' || searchStatus === 'error') && (
@@ -462,6 +470,7 @@ export default function Page() {
                             return (
                               <button
                                 key={`${result.latitude}-${result.longitude}-${index}`}
+                                type="button"
                                 role="option"
                                 aria-selected={isHighlighted}
                                 className={isHighlighted ? 'is-highlighted' : ''}
