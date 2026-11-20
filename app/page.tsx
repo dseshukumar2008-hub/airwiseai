@@ -43,43 +43,87 @@ export default function Page() {
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
+  // Focus search input helper for quick manual fallback
+  const focusSearchInput = useCallback(() => {
+    if (searchInputRef.current) {
+      searchInputRef.current.focus()
+      searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [])
+
   const detectLocation = useCallback(() => {
+    if (typeof window === 'undefined') return
+
     if (!navigator.geolocation) {
       setLocationStatus('unsupported')
-      setLocationMessage('This browser does not support location detection. Search for a city below instead.')
+      setLocationMessage('This browser does not support automatic location. Use the search bar below to find your city.')
       return
     }
+
     setLocationStatus('detecting')
     setForecast(0)
     setLocationMessage('Requesting your device location…')
-    navigator.geolocation.getCurrentPosition(async (position) => {
-      const { latitude, longitude } = position.coords
-      setLocation({ latitude, longitude, name: 'Your current location', source: 'device' })
-      setLocationStatus('ready')
-      setLocationMessage('Location detected from your device.')
-      try {
-        const response = await fetch(`/api/geocode?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`)
-        if (!response.ok) throw new Error('Reverse geocoding failed')
-        const result = await response.json()
-        if (result.name) setLocation((current) => current?.source === 'device' && current.latitude === latitude && current.longitude === longitude ? { ...current, name: result.name } : current)
-      } catch {
-        setLocationMessage('Your coordinates were detected, but the place name is unavailable. The map still uses your exact coordinates.')
-      }
-    }, (error) => {
-      if (error.code === error.PERMISSION_DENIED) {
-        setLocationStatus('denied')
-        setLocationMessage('Location access was denied. Enable location permission for this site in your browser settings, or search for a city below.')
-      } else if (error.code === error.TIMEOUT) {
+
+    // Safeguard watchdog: if navigator.geolocation hangs without invoking success or error callback,
+    // don't leave the UI stuck in "detecting" forever.
+    let resolved = false
+    const timeoutWatchdog = setTimeout(() => {
+      if (!resolved) {
+        resolved = true
         setLocationStatus('timeout')
-        setLocationMessage('Location detection timed out. Retry, or search for a city below.')
-      } else {
-        setLocationStatus('unavailable')
-        setLocationMessage('Your device could not determine a location. Check device location services and retry, or search for a city below.')
+        setLocationMessage('Location request timed out. You can retry detection or search for your city directly below.')
       }
-    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 })
+    }, 10000)
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        if (resolved) return
+        resolved = true
+        clearTimeout(timeoutWatchdog)
+
+        const { latitude, longitude } = position.coords
+        setLocation({ latitude, longitude, name: 'Your current location', source: 'device' })
+        setLocationStatus('ready')
+        setLocationMessage('Location detected from your device.')
+
+        try {
+          const response = await fetch(`/api/geocode?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`)
+          if (!response.ok) throw new Error('Reverse geocoding failed')
+          const result = await response.json()
+          if (result.name) {
+            setLocation((current) =>
+              current?.source === 'device' && current.latitude === latitude && current.longitude === longitude
+                ? { ...current, name: result.name }
+                : current
+            )
+          }
+        } catch {
+          setLocationMessage('Coordinates detected, but the place name lookup is currently busy. Map uses your exact GPS coordinates.')
+        }
+      },
+      (error) => {
+        if (resolved) return
+        resolved = true
+        clearTimeout(timeoutWatchdog)
+
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocationStatus('denied')
+          setLocationMessage('Location permission was denied. You can search for your city below or enable permission in your browser settings.')
+        } else if (error.code === error.TIMEOUT) {
+          setLocationStatus('timeout')
+          setLocationMessage('Location detection timed out. Retry detection or type your city in the search bar below.')
+        } else {
+          setLocationStatus('unavailable')
+          setLocationMessage('Your device could not determine a location. Search for your city below or check device location services.')
+        }
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    )
   }, [])
 
-  useEffect(() => { detectLocation() }, [detectLocation])
+  useEffect(() => {
+    detectLocation()
+  }, [detectLocation])
 
   // Fetch AQI for selected coordinates with strict race-condition guards
   useEffect(() => {
@@ -294,26 +338,74 @@ export default function Page() {
       </div>
     </header>
     <div className="page-wrap">
+      {/* COMPACT PRODUCT INTRODUCTION & LOCATION HEADER */}
       <div className="intro">
         <div className="intro-copy">
-          <div className="kicker"><span /> ENVIRONMENTAL INTELLIGENCE</div>
-          <h1>Air quality explorer<span>.</span></h1>
-          <p>Local air quality, pollutant levels, and health guidance.</p>
+          <h1 className="intro-tagline">Your environment. Your health. Smarter decisions.</h1>
+          <p className="intro-subtitle">Real-time air quality insights and personalized AI guidance.</p>
         </div>
-        <div className="city">
-          <MapPin size={15} />
+        <div className="city" title="Active location">
+          <MapPin size={14} />
           <span>{location?.name ?? 'Location not set'}</span>
         </div>
       </div>
-      <div className="location-banner" role="status" aria-live="polite">
+
+      {/* LOCATION AWARENESS & STATUS SECTION */}
+      <div className={`location-banner ${locationStatus}`} role="status" aria-live="polite">
         <div className="location-banner-text">
-          <strong>{locationStatus === 'detecting' ? 'Finding your location' : location ? 'Your map is location-aware' : 'Set your location'}</strong>
-          <p>{locationStatus === 'detecting' ? 'Allow location access when your browser asks. Coordinates are sent to geocoding and air-quality services for results; AIRWISE does not save them.' : locationMessage}</p>
+          <strong>
+            {locationStatus === 'detecting'
+              ? 'Finding your location…'
+              : locationStatus === 'denied'
+              ? 'Location permission denied'
+              : locationStatus === 'timeout'
+              ? 'Location request timed out'
+              : locationStatus === 'unavailable'
+              ? 'Location unavailable on device'
+              : locationStatus === 'unsupported'
+              ? 'Location detection unsupported'
+              : location
+              ? 'Your map is location-aware'
+              : 'Set your location'}
+          </strong>
+          <p>
+            {locationStatus === 'detecting'
+              ? 'Requesting GPS access from your browser. AIRWISE uses coordinates solely to fetch local AQI and weather estimates.'
+              : locationMessage || 'Search for your city or click find my location.'}
+          </p>
         </div>
-        <button className="locate-action" onClick={detectLocation} disabled={locationStatus === 'detecting'}>
-          <Crosshair size={14} />
-          <span>{locationStatus === 'detecting' ? 'Detecting…' : 'Find my location'}</span>
-        </button>
+        <div className="location-banner-actions">
+          {(locationStatus === 'denied' || locationStatus === 'timeout' || locationStatus === 'unavailable' || locationStatus === 'unsupported' || !location) && (
+            <button
+              type="button"
+              className="locate-search-fallback"
+              onClick={focusSearchInput}
+              aria-label="Search city manually"
+            >
+              <Search size={13} />
+              <span>Search city</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="locate-action"
+            onClick={detectLocation}
+            disabled={locationStatus === 'detecting'}
+            aria-label="Detect current location"
+          >
+            {locationStatus === 'detecting' ? (
+              <>
+                <Loader2 size={13} className="animate-spin" />
+                <span>Detecting…</span>
+              </>
+            ) : (
+              <>
+                <Crosshair size={13} />
+                <span>{locationStatus === 'timeout' || locationStatus === 'unavailable' ? 'Retry detection' : 'Find my location'}</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
       {/* RESPONSIVE TWO-COLUMN DASHBOARD LAYOUT */}
       <div className="app-dashboard-layout">
