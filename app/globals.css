@@ -541,14 +541,76 @@
 .featured-ai-assistant-wrapper{margin-bottom:20px}
 .assistant-section-prominent{background:#ffffff;border:1px solid #dce5dc;border-radius:14px;box-shadow:0 3px 14px #1836250a;padding:24px 26px;position:relative}
 
-/* Context Configuration Toolbar */
-.assistant-context-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:14px;padding:12px 16px;background:#f6faf6;border:1px solid #d9e6da;border-radius:10px;margin-bottom:16px}
-.context-select-group{display:flex;align-items:center;gap:7px;font-size:12px;color:#28513d;font-weight:600}
-.context-select-group label{display:flex;align-items:center;gap:5px;color:#356c52}
-.context-select-group select{padding:5px 9px;border:1px solid #cedece;border-radius:6px;background:#ffffff;color:#183b2a;font-size:11px;font-weight:600;outline:none}
-.context-select-group select:focus-visible{outline:2px solid #279c83}
-.context-source-badge{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;color:#5a7062;padding:4px 8px;background:#ffffff;border:1px solid #d9e4da;border-radius:6px}
-.context-source-badge svg{color:#279c83}
+/* Context Configuration Toolbar & Compact Personalization Panel */
+.assistant-context-panel{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  background:#f6faf6;
+  border:1px solid #d9e6da;
+  border-radius:9px;
+  padding:8px 12px 7px;
+  margin-bottom:12px;
+  box-sizing:border-box;
+}
+.assistant-context-toolbar{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  width:100%;
+}
+.context-select-group{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:11.5px;
+  color:#28513d;
+  font-weight:600;
+  flex:1;
+  min-width:0;
+}
+.context-select-group label{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  color:#356c52;
+  font-size:11px;
+  font-weight:650;
+  white-space:nowrap;
+  flex-shrink:0;
+}
+.context-select-group select{
+  flex:1;
+  min-width:0;
+  height:29px;
+  padding:2px 8px;
+  border:1px solid #cedece;
+  border-radius:6px;
+  background:#ffffff;
+  color:#183b2a;
+  font-size:11px;
+  font-weight:600;
+  outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+.context-select-group select:focus-visible{
+  outline:none;
+  border-color:#279c83;
+  box-shadow:0 0 0 2px #279c8322;
+}
+.context-source-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  font-size:10px;
+  color:#687c70;
+  line-height:1.3;
+  padding-left:1px;
+}
+.context-source-badge svg{
+  color:#279c83;
+  flex-shrink:0;
+}
 
 /* Suggested Question Chips */
 .assistant-suggestions-bar{display:flex;align-items:center;gap:10px;margin-bottom:16px;overflow:hidden}
@@ -720,8 +782,8 @@
 
 @media(max-width:740px){
   .assistant-section-prominent{padding:16px}
-  .assistant-context-toolbar{flex-direction:column;align-items:stretch}
-  .context-source-badge{margin-left:0}
+  .assistant-context-toolbar{flex-direction:column;align-items:stretch;gap:8px}
+  .context-select-group{width:100%}
   .chat-bubble-row{max-width:100%}
   .pollution-intelligence-card{padding:16px}
   .intelligence-metrics-grid{grid-template-columns:1fr}

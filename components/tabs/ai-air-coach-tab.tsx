@@ -285,44 +285,47 @@ export function AIAirCoachTab({
         </div>
       </div>
 
-      {/* Household & Activity Context Toolbar */}
-      <div className="assistant-context-toolbar">
-        <div className="context-select-group">
-          <label htmlFor={audienceSelectId}>
-            <UserCheck size={14} /> Profile:
-          </label>
-          <select
-            id={audienceSelectId}
-            value={audience}
-            onChange={(e) => setAudience(e.target.value)}
-          >
-            {audienceOptions.map(([val, label]) => (
-              <option key={val} value={val}>
-                {label}
-              </option>
-            ))}
-          </select>
+      {/* Compact Personalization Panel */}
+      <div className="assistant-context-panel">
+        <div className="assistant-context-toolbar">
+          <div className="context-select-group">
+            <label htmlFor={audienceSelectId}>
+              <UserCheck size={13} /> Profile:
+            </label>
+            <select
+              id={audienceSelectId}
+              value={audience}
+              onChange={(e) => setAudience(e.target.value)}
+            >
+              {audienceOptions.map(([val, label]) => (
+                <option key={val} value={val}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="context-select-group">
+            <label htmlFor={activitySelectId}>
+              <Compass size={13} /> Priority:
+            </label>
+            <select
+              id={activitySelectId}
+              value={activity}
+              onChange={(e) => setActivity(e.target.value)}
+            >
+              {activityOptions.map(([val, label]) => (
+                <option key={val} value={val}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="context-select-group">
-          <label htmlFor={activitySelectId}>
-            <Compass size={14} /> Priority:
-          </label>
-          <select
-            id={activitySelectId}
-            value={activity}
-            onChange={(e) => setActivity(e.target.value)}
-          >
-            {activityOptions.map(([val, label]) => (
-              <option key={val} value={val}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-
+        {/* Source Attribution Note */}
         <div className="context-source-badge">
-          <Info size={13} />
+          <Info size={11} />
           <span>{readingLabel}</span>
         </div>
       </div>
