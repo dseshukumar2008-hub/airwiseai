@@ -1,6 +1,7 @@
 'use client'
 
 import { useId, useRef, useState, useEffect } from 'react'
+import { marked } from 'marked'
 import {
   ArrowRight,
   Bot,
@@ -376,7 +377,16 @@ export function AIAirCoachTab({
                   </div>
                   <div className="chat-bubble-body">
                     {msg.content ? (
-                      <div className="markdown-prose whitespace-pre-wrap">{msg.content}</div>
+                      msg.role === 'assistant' ? (
+                        <div
+                          className="markdown-prose"
+                          dangerouslySetInnerHTML={{
+                            __html: marked.parse(msg.content, { async: false, breaks: true }) as string,
+                          }}
+                        />
+                      ) : (
+                        <div className="user-prose whitespace-pre-wrap">{msg.content}</div>
+                      )
                     ) : (
                       <div className="chat-thinking-indicator">
                         <RefreshCw size={15} className="animate-spin" />

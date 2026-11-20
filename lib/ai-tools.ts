@@ -50,73 +50,132 @@ export function generateDeterministicFallbackGuidance(params: {
     windSpeedKmh?: number | null
   } | null
 }): string {
+  const query = (params.userQuery || '').toLowerCase()
+  const loc = params.locationName ?? 'Local Coordinates'
+  const aqi = params.currentAqi
+  const pm25Str = params.pm25 != null ? `${params.pm25.toFixed(1)} µg/m³` : 'N/A'
+
+  // Determine category
+  let cat = 'Moderate'
+  if (aqi <= 50) cat = 'Good'
+  else if (aqi <= 100) cat = 'Moderate'
+  else if (aqi <= 150) cat = 'Unhealthy for Sensitive Groups'
+  else if (aqi <= 200) cat = 'Unhealthy'
+  else if (aqi <= 300) cat = 'Very Unhealthy'
+  else cat = 'Hazardous'
+
+  const banner = `> **AIRWISE Verified Rule-Based Response** · *Calculated directly from verified environmental algorithms while AI providers are offline or rate-limited.*`
+
+  // 1. WINDOWS & INDOOR VENTILATION
+  if (query.includes('window') || query.includes('ventil') || query.includes('indoor') || query.includes('air purifier')) {
+    const indoor = getIndoorAirGuidance({
+      outdoorAqi: aqi,
+      outdoorPm25: params.pm25,
+      weatherContext: params.weatherContext,
+    })
+    return [
+      banner,
+      '',
+      `### Window & Indoor Air Guidance for ${loc}`,
+      `- **Current Outdoor Air Quality:** US AQI **${aqi}** (${cat}), PM2.5 **${pm25Str}**.`,
+      `- **Window Strategy:** ${indoor.windowVentilationStrategy}`,
+      `- **Air Purifier Recommendation:** ${indoor.airPurificationGuidance}`,
+      `- **Indoor Combustion Precautions:** ${indoor.indoorCombustionPrecautions}`,
+      `- **Dust & Maintenance:** ${indoor.dustAndCleaningAdvice}`,
+      '',
+      `*Sensor Transparency: ${indoor.sensorDisclaimer}*`,
+    ].join('\n')
+  }
+
+  // 2. SPORTS, PLAY & OUTDOOR ACTIVITIES
+  if (query.includes('play') || query.includes('football') || query.includes('cricket') || query.includes('sport') || query.includes('outside') || query.includes('child') || query.includes('exercise')) {
+    const routine = generateDailyRoutine({
+      currentAqi: aqi,
+      householdProfile: (params.householdProfile as any) || (query.includes('child') ? 'children' : 'general'),
+      plannedActivity: 'outdoor exercise or play',
+      weatherContext: params.weatherContext,
+    })
+    return [
+      banner,
+      '',
+      `### Outdoor Activity Guidance for ${loc}`,
+      `- **Current Condition:** US AQI **${aqi}** (${cat}), PM2.5 **${pm25Str}**.`,
+      `- **Activity Suitability:** **${routine.activityGuidance}** (${routine.suitability})`,
+      `- **Timing Strategy:** ${routine.recommendedTiming}`,
+      `- **Respiratory Mitigation:** ${routine.exposureMitigation}`,
+      `- **Rationale:** ${routine.rationale}`,
+    ].join('\n')
+  }
+
+  // 3. COMMUTE, EMISSIONS & TRANSIT
+  if (query.includes('emiss') || query.includes('co2') || query.includes('commut') || query.includes('car') || query.includes('metro') || query.includes('transit') || query.includes('bus')) {
+    const impact = calculateEnvironmentalImpact({
+      baselineModeId: 'car-petrol',
+      alternativeModeId: 'rail',
+      distanceKm: 10,
+      tripsPerWeek: 5,
+    })
+    const alternatives = compareSustainableAlternatives({
+      baselineModeId: 'car-petrol',
+      distanceKm: 10,
+      currentAqi: aqi,
+    })
+    return [
+      banner,
+      '',
+      `### Commute Emissions & Low-Emission Transit (10 km daily baseline)`,
+      `- **Current Ambient AQI:** US AQI **${aqi}** (${cat}).`,
+      `- **Carbon Savings:** Shifting from a solo petrol car to electric rail saves **${impact.calculations.singleTripSavedKgCO2e} kg CO₂e** per 10 km trip (${impact.calculations.percentReduction}% reduction).`,
+      `- **Weekly & Annual Impact:** Saves **${impact.calculations.weeklySavedKgCO2e} kg CO₂e** weekly (~${impact.calculations.annualSavedKgCO2e} kg CO₂e per year).`,
+      `- **Tailpipe Pollution Benefits:** ${impact.directPollutantReductionMechanism}`,
+      `- **Health & Active Travel Safety:** ${alternatives.advisory}`,
+    ].join('\n')
+  }
+
+  // 4. CURRENT AQI / POLLUTANTS QUERY
+  if (query.includes('aqi') || query.includes('pm2.5') || query.includes('pm10') || query.includes('current') || query.includes('level')) {
+    const intelligence = analyzeEnvironmentalConditions({
+      currentAqi: aqi,
+      pm25: params.pm25,
+      pm10: params.pm10,
+      temperatureC: params.weatherContext?.temperatureC,
+      relativeHumidityPercent: params.weatherContext?.relativeHumidityPercent,
+      windSpeedKmh: params.weatherContext?.windSpeedKmh,
+    })
+    return [
+      banner,
+      '',
+      `### Current Air Quality Telemetry: ${loc}`,
+      `- **US AQI:** **${aqi}** (${cat})`,
+      `- **PM2.5:** **${pm25Str}**`,
+      params.pm10 != null ? `- **PM10:** **${params.pm10.toFixed(1)} µg/m³**` : '',
+      `- **Atmospheric Dispersion:** **${intelligence.stagnationStatus}** (${params.weatherContext?.windSpeedKmh != null ? `${params.weatherContext.windSpeedKmh.toFixed(1)} km/h wind` : 'calm'})`,
+      `- **Action Advice:** ${intelligence.recommendedAction}`,
+      `- **Data Source:** ${params.readingLabel} (coordinate-based estimate)`,
+    ].filter(Boolean).join('\n')
+  }
+
+  // 5. GENERAL COMPREHENSIVE BRIEFING (when no specific intent matches or full plan requested)
   const routine = generateDailyRoutine({
-    currentAqi: params.currentAqi,
+    currentAqi: aqi,
     householdProfile: params.householdProfile as any,
     plannedActivity: params.plannedActivity,
     weatherContext: params.weatherContext,
   })
-
   const indoor = getIndoorAirGuidance({
-    outdoorAqi: params.currentAqi,
+    outdoorAqi: aqi,
     outdoorPm25: params.pm25,
     weatherContext: params.weatherContext,
   })
 
-  const alternatives = compareSustainableAlternatives({
-    baselineModeId: 'car-petrol',
-    distanceKm: 10,
-    currentAqi: params.currentAqi,
-  })
-
-  const impact = calculateEnvironmentalImpact({
-    baselineModeId: 'car-petrol',
-    alternativeModeId: 'rail',
-    distanceKm: 10,
-    tripsPerWeek: 5,
-  })
-
-  const intelligence = analyzeEnvironmentalConditions({
-    currentAqi: params.currentAqi,
-    pm25: params.pm25,
-    pm10: params.pm10,
-    temperatureC: params.weatherContext?.temperatureC,
-    relativeHumidityPercent: params.weatherContext?.relativeHumidityPercent,
-    windSpeedKmh: params.weatherContext?.windSpeedKmh,
-  })
-
   return [
-    `> **Deterministic Rule-Based Guidance** · *Generated directly by AIRWISE verified calculations while the live Gemini API is offline or quota-limited.*`,
+    banner,
     '',
-    `### 1. Current Air Quality & Exposure Context`,
-    `Location: **${params.locationName ?? 'Local Coordinates'}** | Measured **US AQI: ${params.currentAqi}** (${routine.suitability})${params.pm25 != null ? ` | PM2.5: **${params.pm25.toFixed(1)} µg/m³**` : ''}.`,
-    `Atmospheric Dispersion: **${intelligence.stagnationStatus}** (${params.weatherContext?.windSpeedKmh != null ? `${params.weatherContext.windSpeedKmh.toFixed(1)} km/h wind` : 'wind pending'}).`,
-    routine.rationale,
-    '',
-    `### 2. Activity Guidance & Daily Routine`,
-    `**${routine.activityGuidance}**`,
-    `- **Timing Strategy:** ${routine.recommendedTiming}`,
-    `- **Exposure Mitigation:** ${routine.exposureMitigation}`,
-    '',
-    `### 3. Indoor Air Quality & Ventilation Strategy`,
-    `- **Window Strategy:** ${indoor.windowVentilationStrategy}`,
-    `- **Filtration:** ${indoor.airPurificationGuidance}`,
-    `- **Combustion Safety:** ${indoor.indoorCombustionPrecautions}`,
-    `- **Dust Management:** ${indoor.dustAndCleaningAdvice}`,
-    '',
-    `### 4. Low-Emission & Sustainable Alternatives`,
-    alternatives.advisory,
-    `- **Transit Comparison:** Shifting a 10 km daily commute from solo petrol car to electric rail avoids **${impact.calculations.singleTripSavedKgCO2e} kg CO₂e** per trip (${impact.calculations.percentReduction}% reduction).`,
-    `- **Active Travel Caution:** ${alternatives.alternatives.find((a) => a.id === 'walking')?.recommendationNote ?? 'Avoid high-ventilation active cycling along traffic arteries during elevated smog.'}`,
-    '',
-    `### 5. Verified Environmental & Emissions Impact`,
-    `${impact.directPollutantReductionMechanism}`,
-    `Weekly savings across a 5-day commute: **${impact.calculations.weeklySavedKgCO2e} kg CO₂e** (Avoids ~${impact.calculations.annualSavedKgCO2e} kg CO₂e annually).`,
-    '',
-    `### 6. Daily Action Checklist`,
-    `1. ${intelligence.recommendedAction}`,
-    `2. Keep windows closed during rush hour peaks; run true HEPA filtration indoors.`,
-    `3. Choose electrified mass transit over solo driving to cut street-level tailpipe toxics.`,
+    `### Environmental Health Summary for ${loc}`,
+    `- **Air Quality:** US AQI **${aqi}** (${cat}) | PM2.5: **${pm25Str}**`,
+    `- **Activity Guidance:** ${routine.activityGuidance}`,
+    `- **Windows & Ventilation:** ${indoor.windowVentilationStrategy}`,
+    `- **Indoor Care:** ${indoor.airPurificationGuidance}`,
   ].join('\n')
 }
 

@@ -794,6 +794,64 @@
 .chat-bubble-body{padding:12px 16px;border-radius:12px;font-size:13px;line-height:1.6}
 .is-user .chat-bubble-body{background:#174c3c;color:#ffffff;border-bottom-right-radius:2px}
 .is-assistant .chat-bubble-body{background:#ffffff;border:1px solid #d9e5da;color:#1e352b;border-bottom-left-radius:2px;box-shadow:0 1px 4px #1b382708}
+
+/* Markdown prose rendering inside assistant messages */
+.markdown-prose{
+  font-size:13px;
+  line-height:1.6;
+  color:#1e352b;
+}
+.markdown-prose h1,
+.markdown-prose h2,
+.markdown-prose h3,
+.markdown-prose h4{
+  font-weight:700;
+  color:#15412e;
+  margin:10px 0 6px;
+  line-height:1.35;
+}
+.markdown-prose h3{font-size:14px}
+.markdown-prose h4{font-size:13px}
+.markdown-prose p{
+  margin:0 0 8px;
+}
+.markdown-prose p:last-child{
+  margin-bottom:0;
+}
+.markdown-prose ul,
+.markdown-prose ol{
+  margin:4px 0 8px 18px;
+  padding:0;
+}
+.markdown-prose li{
+  margin:2px 0;
+}
+.markdown-prose strong{
+  font-weight:700;
+  color:#143d2c;
+}
+.markdown-prose blockquote{
+  margin:8px 0;
+  padding:6px 12px;
+  background:#f2f7f3;
+  border-left:3px solid #279c83;
+  border-radius:4px;
+  font-size:12px;
+  color:#3a5948;
+}
+.markdown-prose a{
+  color:#1f7c68;
+  text-decoration:underline;
+  text-underline-offset:2px;
+}
+.markdown-prose code{
+  font-family:monospace;
+  background:#eff4f0;
+  padding:2px 5px;
+  border-radius:4px;
+  font-size:12px;
+}
+
 .chat-thinking-indicator{display:flex;align-items:center;gap:8px;color:#279c83;font-size:12px;font-weight:600;padding:4px 0}
 
 /* Message Input Form & Unified Composer */

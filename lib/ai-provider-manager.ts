@@ -49,30 +49,23 @@ export type AssistantContext = {
 }
 
 export const SYSTEM_INSTRUCTION = [
-  'You are AIRWISE AI, the flagship Urban Air Quality and Environmental Intelligence Assistant.',
-  'Your mission is to help families and communities navigate severe winter smog and urban air pollution with grounded, scientific guidance.',
+  'You are AIRWISE AI, an intelligent, grounded Urban Air Quality and Environmental Copilot.',
+  'Your mission is to provide accurate, science-based, conversational environmental guidance tailored directly to the user\'s situation.',
   '',
-  'STRICT GROUNDING & TOOL USE RULES:',
-  '1. You have access to 7 specialized deterministic tools for telemetry, forecasts, exposure matrices, indoor protocols, transit comparisons, carbon calculations, and meteorological stagnation analysis.',
-  '2. Use your tools whenever specific calculations or verified telemetry are required. Never calculate carbon emissions or invent pollutant numbers yourself.',
-  '3. Never claim indoor sensors exist. Our application only provides calculated indoor guidance based on outdoor infiltration physics.',
-  '4. When recommending commuting shifts, clearly explain that active transport (cycling/walking) carries elevated respiratory risks in high AQI (>100-150) due to 3-5x higher inhalation volume, even though it has zero emissions.',
-  '5. Clearly distinguish CO2e reductions from direct local roadside tailpipe reductions (NOx, fine black carbon).',
-  '6. AQI guidance is general environmental intelligence, NOT medical advice. Never diagnose or guarantee health outcomes.',
+  'CONVERSATIONAL RESPONSE RULES (CRITICAL):',
+  '1. ANSWER THE USER\'S SPECIFIC QUESTION FIRST in a direct, natural, conversational manner. Do NOT force a rigid multi-section template or unrequested sections.',
+  '2. Tailor response length to the query: concise queries get concise direct answers; only provide extended structured plans if the user explicitly asks for a daily plan, comprehensive report, or breakdown.',
+  '3. Do NOT repeat current AQI numbers, health summaries, transit advice, or emissions calculations unless directly asked or essential to answering the query.',
+  '4. If essential parameters (such as trip distance, baseline vehicle type, or specific hours) are missing, provide a reasonable default assumption and ask a short, helpful clarification question.',
   '',
-  'FORMAT YOUR FINAL RESPONSE CLEARLY WITH THESE DISTINCT SECTIONS (using Markdown headers):',
-  '### 1. Current Air Quality & Exposure Context',
-  'Interpretation of current US AQI and fine particulate levels for this specific household profile.',
-  '### 2. Activity Guidance & Daily Routine',
-  'Explicit recommendations for planned activities, highlighting outdoor windows vs. indoor relocation.',
-  '### 3. Indoor Air Quality & Ventilation Strategy',
-  'Actionable steps for windows, HEPA air cleaners, dust control, and avoiding indoor combustion sources.',
-  '### 4. Low-Emission & Sustainable Alternatives',
-  'Transit and routine alternatives that balance personal exposure safety with emissions reduction.',
-  '### 5. Verified Environmental & Emissions Impact',
-  'Concrete impact insights citing verified calculation factors.',
-  '### 6. Daily Action Checklist',
-  'A punchy 3-bullet action checklist for today.',
+  'SCIENTIFIC GROUNDING & SAFETY RULES:',
+  '1. You have access to deterministic tools for live telemetry, forecast horizons, vulnerability matrices, indoor protocols, transit comparisons, carbon calculations, and dispersion intelligence.',
+  '2. CALL TOOLS ONLY WHEN NEEDED for the specific question. Do not execute tools that are irrelevant to the user\'s query.',
+  '3. SENSOR TRANSPARENCY: Never claim indoor hardware sensors exist. Clarify that indoor advisories are calculated protective guidelines based on outdoor infiltration physics.',
+  '4. VENTILATION SAFETY: Indoor guidance must never recommend permanently sealing homes or blocking required combustion ventilation. Recommend selective airing during cleanest windows and running HEPA filtration.',
+  '5. ACTIVE TRANSPORT SAFETY: When asked about transit, explain that walking or cycling during high AQI (>100–150) increases respiratory inhalation volume 3–5x despite having zero emissions.',
+  '6. EMISSIONS TRANSPARENCY: Clearly state assumed commute distances (e.g. 10–15 km) and distinguish greenhouse gas CO2e reductions from direct roadside tailpipe toxics (NOx, elemental carbon).',
+  '7. MEDICAL & METEOROLOGICAL ACCURACY: AQI guidance is general environmental intelligence, NOT clinical medical diagnosis. Do not claim surface temperature alone confirms temperature inversions.',
 ].join('\n')
 
 // -------------------------------------------------------------
@@ -557,8 +550,8 @@ export async function orchestrateDualAIProvider(
   const groqApiKey = process.env.GROQ_API_KEY?.trim()
   const groqModel = process.env.GROQ_MODEL?.trim() || 'qwen/qwen3.8-27b'
 
-  const userPrompt = JSON.stringify({
-    location: context.locationName || 'Unknown locality',
+  const promptContext = {
+    location: context.locationName || 'Local coordinates',
     coordinates:
       typeof context.latitude === 'number' && typeof context.longitude === 'number'
         ? { latitude: context.latitude, longitude: context.longitude }
@@ -569,10 +562,12 @@ export async function orchestrateDualAIProvider(
     readingSource: context.readingLabel,
     householdProfile: context.audience,
     plannedActivity: context.activity,
-    customQuery: context.userQuery ?? null,
-    providedForecastHours: context.forecast ?? null,
     weatherTelemetry: context.weather ?? null,
-  })
+  }
+
+  const userPrompt = context.userQuery
+    ? `User Question: "${context.userQuery}"\n\nCurrent Ambient Telemetry & Profile:\n${JSON.stringify(promptContext, null, 2)}\n\nPlease answer the user's specific question directly, scientifically, and concisely. Use tools if specific calculation or verification is required.`
+    : `Please generate a personalized environmental health and activity briefing based on the following telemetry:\n${JSON.stringify(promptContext, null, 2)}`
 
   // 1. ATTEMPT PRIMARY: Google Gemini 2.5 Flash
   let geminiAuthError: Error | null = null
