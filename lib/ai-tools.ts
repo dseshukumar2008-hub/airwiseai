@@ -66,7 +66,86 @@ export function generateDeterministicFallbackGuidance(params: {
 
   const banner = `> **AIRWISE Verified Rule-Based Response** · *Calculated directly from verified environmental algorithms while AI providers are offline or rate-limited.*`
 
-  // 1. WINDOWS & INDOOR VENTILATION
+  // 1. FAMILY MULTI-MEMBER SCENARIO / COMPREHENSIVE PLAN
+  if (
+    query.includes('family') ||
+    (query.includes('children') && query.includes('elderly')) ||
+    (query.includes('parent') && (query.includes('children') || query.includes('commute'))) ||
+    query.includes('plan')
+  ) {
+    const routineChildren = generateDailyRoutine({
+      currentAqi: aqi,
+      householdProfile: 'children',
+      plannedActivity: 'outdoor exercise or play',
+      weatherContext: params.weatherContext,
+    })
+    const routineElderly = generateDailyRoutine({
+      currentAqi: aqi,
+      householdProfile: 'older-adult',
+      plannedActivity: 'walking or cycling',
+      weatherContext: params.weatherContext,
+    })
+    const commuteImpact = calculateEnvironmentalImpact({
+      baselineModeId: 'car-petrol',
+      alternativeModeId: 'rail',
+      distanceKm: 10,
+      tripsPerWeek: 5,
+    })
+    const transitAlts = compareSustainableAlternatives({
+      baselineModeId: 'car-petrol',
+      distanceKm: 10,
+      currentAqi: aqi,
+    })
+    const indoor = getIndoorAirGuidance({
+      outdoorAqi: aqi,
+      outdoorPm25: params.pm25,
+      weatherContext: params.weatherContext,
+    })
+
+    return [
+      banner,
+      '',
+      `### 1. Current Air-Quality Situation`,
+      `Location: **${loc}** | US AQI: **${aqi}** (${cat})${params.pm25 != null ? ` | PM2.5: **${pm25Str}**` : ''}.`,
+      params.weatherContext?.windSpeedKmh != null
+        ? `Surface Wind: **${params.weatherContext.windSpeedKmh.toFixed(1)} km/h** | Relative Humidity: **${params.weatherContext.relativeHumidityPercent ?? 'N/A'}%**.`
+        : '',
+      '',
+      `### 2. Recommendations for the Children`,
+      `- **School Commute & Play:** ${routineChildren.activityGuidance}`,
+      `- **Sports & Outdoor Exertion:** Suspend high-intensity outdoor soccer/cricket. Because children inhale 2–3x more air volume relative to body mass, vigorous cardio causes deep particulate lung penetration.`,
+      `- **Indoor Alternatives:** Relocate games indoors; use gymnasiums or living room activity games with active air cleaning.`,
+      '',
+      `### 3. Recommendations for the Elderly Member`,
+      `- **Outdoor Walks & Errands:** ${routineElderly.activityGuidance}`,
+      `- **Precautions:** Avoid early morning and evening peak traffic hours when ambient particulates pool near ground level. If outdoor errands are unavoidable, wear a well-fitted respirator.`,
+      `- **Indoor Alternatives:** Gentle indoor walking, stretching, or reading in an interior room with stable, filtered air.`,
+      '',
+      `### 4. Working Parent's Commute Plan`,
+      `- **Lower-Emission Commuting:** Shift from solo petrol car to electric metro or train. Shifting avoids **${commuteImpact.calculations.singleTripSavedKgCO2e} kg CO₂e** per 10 km one-way trip (${commuteImpact.calculations.percentReduction}% reduction).`,
+      `- **Exposure Reduction During Travel:** Travel in sealed train cars or cabin-filtered buses; avoid open-air walking/cycling along traffic arteries during high AQI.`,
+      `- **Tailpipe Benefit:** ${commuteImpact.directPollutantReductionMechanism}`,
+      '',
+      `### 5. Indoor Air-Quality and Ventilation Plan`,
+      `- **Window Strategy:** ${indoor.windowVentilationStrategy}`,
+      `- **Air Purifiers:** ${indoor.airPurificationGuidance}`,
+      `- **Combustion Safety:** ${indoor.indoorCombustionPrecautions}`,
+      `- **Cleaning:** ${indoor.dustAndCleaningAdvice}`,
+      '',
+      `### 6. Sustainable Alternatives and Environmental Impact`,
+      `- **Weekly Commute Carbon Savings:** Saves **${commuteImpact.calculations.weeklySavedKgCO2e} kg CO₂e** across 5 working days (~${commuteImpact.calculations.annualSavedKgCO2e} kg CO₂e/yr assuming 10 km distance).`,
+      `- **Local Air Quality Protection:** Cites EEA/UK DEFRA factors. Choosing public mass transit removes localized vehicle starts and curbs ground-level diesel particulate formation.`,
+      '',
+      `### 7. Family Daily Action Checklist`,
+      `1. Keep windows closed during rush hour peaks; air out only briefly if forecast improves.`,
+      `2. Transition children's cardio and elderly walks indoors to a protected interior room.`,
+      `3. Commute via electric metro/rail; set vehicle or home ventilation to recirculate.`,
+      '',
+      `*Sensor Transparency: ${indoor.sensorDisclaimer}*`,
+    ].filter(Boolean).join('\n')
+  }
+
+  // 2. WINDOWS & INDOOR VENTILATION
   if (query.includes('window') || query.includes('ventil') || query.includes('indoor') || query.includes('air purifier')) {
     const indoor = getIndoorAirGuidance({
       outdoorAqi: aqi,
@@ -722,25 +801,25 @@ export function getIndoorAirGuidance(input: IndoorGuidanceInput): IndoorGuidance
     windowVentilationStrategy =
       'Open windows for cross-ventilation (30–60 minutes) to flush indoor CO₂, volatile organic compounds (VOCs), and moisture.'
     airPurificationGuidance =
-      'HEPA air purifiers can be run on low or eco mode; outdoor air is clean enough for natural refreshing.'
+      'HEPA air purifiers can be run on low or eco mode; if you do not have a purifier, natural ventilation currently provides clean air exchange.'
     indoorCombustionPrecautions =
       'Standard kitchen ventilation: use an exhaust hood when frying or cooking with gas burners.'
     dustAndCleaningAdvice =
       'Standard regular vacuuming and damp wiping maintain good indoor baseline cleanliness.'
   } else if (outdoorAqi <= 100) {
     windowVentilationStrategy =
-      'Selective airing: open windows briefly for 10–15 minutes during early afternoon when traffic dips. Keep closed during morning and evening rush hour spikes.'
+      'Selective airing: open windows briefly for 10–15 minutes during early afternoon when traffic dips. Keep closed during morning and evening rush hour spikes. Never seal permanently.'
     airPurificationGuidance =
-      'Run HEPA air cleaner in primary living areas and bedrooms at moderate speed, especially after opening windows.'
+      'Run HEPA air cleaner in primary living areas and bedrooms at moderate speed. If no purifier is available, limit airing to the cleanest afternoon window and avoid stirring up dust.'
     indoorCombustionPrecautions =
       'Always run kitchen range hood to exterior. Avoid burning candles, incense, or unvented indoor burners.'
     dustAndCleaningAdvice =
       'Use microfiber damp wiping to prevent resuspending settled dust into breathing zones.'
   } else if (outdoorAqi <= 150) {
     windowVentilationStrategy =
-      'Seal windows and exterior doors. Natural infiltration allows fine particulates to enter; keep outer envelope tightly shut.'
+      'Keep windows and balcony doors closed while outdoor pollution is elevated, but do not block required building fresh-air or combustion vents. Ventilate briefly later when outdoor air quality improves.'
     airPurificationGuidance =
-      'Operate verified HEPA air purifiers continuously in bedrooms and main rooms. Check filter pre-screen for buildup.'
+      'Operate verified HEPA air purifiers continuously in bedrooms and main rooms. If a HEPA purifier is unavailable: create a designated cleaner room with closed doors, place damp towels along drafty door gaps, minimize indoor activity that resuspends dust, and consider a DIY box fan with MERV 13 filter.'
     indoorCombustionPrecautions =
       'Strictly avoid indoor smoking, frying, charring food, or lighting scented candles/incense. These generate intense localized PM2.5 spikes.'
     dustAndCleaningAdvice =
@@ -748,13 +827,13 @@ export function getIndoorAirGuidance(input: IndoorGuidanceInput): IndoorGuidance
   } else {
     // 151+
     windowVentilationStrategy =
-      'Strict airtight lockdown: keep all windows, vents, and doors firmly shut. Seal window gaps with weatherstripping or damp towels along drafty sills.'
+      'Keep windows, outer doors, and unneeded external vents closed during this high-pollution episode. Crucial: never seal homes indefinitely or block required gas/combustion appliance safety vents. Air out the home briefly only when forecast shows outdoor AQI dropping to safer levels.'
     airPurificationGuidance =
-      'Run true HEPA filtration on high/turbo continuously. Create a designated "clean air sleeping room" with sealed doors and dedicated filtration.'
+      'Run HEPA filtration on high/turbo continuously in bedrooms and primary rooms. If no HEPA purifier is owned: designate one interior room as a low-infiltration sanctuary, keep doors shut, avoid indoor cooking smoke or vacuuming, use damp cloths to trap dust, and maintain central HVAC on recirculate with high-efficiency filters if available.'
     indoorCombustionPrecautions =
-      'Zero indoor combustion: no open flames, no smoking, avoid unvented stovetop cooking, avoid aerosol sprays or harsh chemical cleaning agents.'
+      'Zero unnecessary indoor combustion: no open flames, no smoking, avoid unvented stovetop cooking, avoid aerosol sprays or harsh chemical cleaning agents.'
     dustAndCleaningAdvice =
-      'Wet-mop floors only. If living with asthmatic individuals, keep them inside the cleanest filtered room away from perimeter windows.'
+      'Wet-mop floors only. For vulnerable individuals (children, asthmatics, older adults), rest in the interior room away from perimeter windows.'
   }
 
   const pmDetail = outdoorPm25 ? ` (Outdoor PM2.5: ${outdoorPm25.toFixed(1)} µg/m³)` : ''
