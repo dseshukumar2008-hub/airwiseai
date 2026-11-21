@@ -1,7 +1,8 @@
 'use client'
 
-import { useId, useRef, useState, useEffect } from 'react'
+import { useId, useRef, useState, useEffect, useMemo } from 'react'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import {
   ArrowRight,
   Bot,
@@ -78,6 +79,30 @@ const suggestedPrompts = [
   'What are the emission and health differences between driving vs. taking the metro?',
   'Give me a low-emission routine based on today’s pollution forecast.',
 ]
+
+function renderCleanMarkdown(content: string): string {
+  if (!content) return ''
+  // 1. Unescape any backslashes before markdown formatting symbols
+  const unescaped = content
+    .replace(/\\([*_{}[\]()#+\-.!~`>|])/g, '$1')
+    .replace(/\\\\/g, '\\')
+
+  // 2. Parse Markdown to HTML
+  const rawHtml = marked.parse(unescaped, { async: false, breaks: true }) as string
+
+  // 3. Sanitize HTML via DOMPurify in browser environment to protect against XSS
+  if (typeof window !== 'undefined' && DOMPurify.sanitize) {
+    return DOMPurify.sanitize(rawHtml, {
+      ALLOWED_TAGS: [
+        'p', 'br', 'strong', 'em', 'b', 'i', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'ul', 'ol', 'li', 'blockquote', 'code', 'pre', 'a', 'hr', 'span',
+      ],
+      ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'class'],
+    })
+  }
+
+  return rawHtml
+}
 
 export function AIAirCoachTab({
   locationName,
@@ -381,7 +406,7 @@ export function AIAirCoachTab({
                         <div
                           className="markdown-prose"
                           dangerouslySetInnerHTML={{
-                            __html: marked.parse(msg.content, { async: false, breaks: true }) as string,
+                            __html: renderCleanMarkdown(msg.content),
                           }}
                         />
                       ) : (

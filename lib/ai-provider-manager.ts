@@ -48,6 +48,14 @@ export type AssistantContext = {
   simulateGeminiQuota?: boolean
 }
 
+export function unescapeMarkdownBackslashes(text: string): string {
+  if (!text) return ''
+  // Strip backslashes placed before Markdown formatting tokens: \*, \_, \[, \], \(, \), \#, \+, \-, \., \!, \~, \`, \>, \|
+  return text
+    .replace(/\\([*_{}[\]()#+\-.!~`>|])/g, '$1')
+    .replace(/\\\\/g, '\\')
+}
+
 export const SYSTEM_INSTRUCTION = [
   'You are AIRWISE AI, an intelligent, grounded Urban Air Quality and Environmental Copilot.',
   'Your mission is to provide accurate, science-based, conversational environmental guidance tailored directly to the user\'s situation.',
@@ -57,6 +65,7 @@ export const SYSTEM_INSTRUCTION = [
   '2. Tailor response length to the query: concise queries get concise direct answers; only provide extended structured plans if the user explicitly asks for a daily plan, comprehensive report, or breakdown.',
   '3. Do NOT repeat current AQI numbers, health summaries, transit advice, or emissions calculations unless directly asked or essential to answering the query.',
   '4. If essential parameters (such as trip distance, baseline vehicle type, or specific hours) are missing, provide a reasonable default assumption and ask a short, helpful clarification question.',
+  '5. FORMATTING: Use clean, standard Markdown without backslash-escaping characters. Never escape asterisks, brackets, or dashes (e.g., write **bold** and * bullet, NEVER \\*\\*bold\\*\\* or \\* bullet). Use real newlines.',
   '',
   'SCIENTIFIC GROUNDING & SAFETY RULES:',
   '1. You have access to deterministic tools for live telemetry, forecast horizons, vulnerability matrices, indoor protocols, transit comparisons, carbon calculations, and dispersion intelligence.',
@@ -65,7 +74,12 @@ export const SYSTEM_INSTRUCTION = [
   '4. VENTILATION SAFETY: Indoor guidance must never recommend permanently sealing homes or blocking required combustion ventilation. Recommend selective airing during cleanest windows and running HEPA filtration.',
   '5. ACTIVE TRANSPORT SAFETY: When asked about transit, explain that walking or cycling during high AQI (>100–150) increases respiratory inhalation volume 3–5x despite having zero emissions.',
   '6. EMISSIONS TRANSPARENCY: Clearly state assumed commute distances (e.g. 10–15 km) and distinguish greenhouse gas CO2e reductions from direct roadside tailpipe toxics (NOx, elemental carbon).',
-  '7. MEDICAL & METEOROLOGICAL ACCURACY: AQI guidance is general environmental intelligence, NOT clinical medical diagnosis. Do not claim surface temperature alone confirms temperature inversions.',
+  '7. MEDICAL & FACTUAL ACCURACY:',
+  '   - AQI guidance is general environmental intelligence, NOT clinical medical advice.',
+  '   - Do NOT make unsupported clinical claims or invent arbitrary numerical exposure reduction percentages.',
+  '   - Do NOT give arbitrary time limits like "under 30 minutes" without scientific basis; instead recommend reducing intensity and duration proportionally to pollution severity.',
+  '   - Do NOT claim surface temperature or calm winds confirm temperature inversions (inversions cannot be confirmed by surface telemetry alone).',
+  '   - When discussing forecasts, reference the actual forecast timestamp, local time, and whether conditions will realistically improve.',
 ].join('\n')
 
 // -------------------------------------------------------------
@@ -499,10 +513,12 @@ export async function runGroqOrchestration(
 
     const toolCalls = message.tool_calls || []
     if (toolCalls.length === 0) {
-      const finalText = (message.content || '').trim()
+      let finalText = (message.content || '').trim()
       if (!finalText) {
         throw new Error('Groq model returned an empty response.')
       }
+      // Sanitize any escaped Markdown backslashes produced by models (e.g. \*\* or \* or \_)
+      finalText = unescapeMarkdownBackslashes(finalText)
       return { text: finalText, toolRounds: round - 1 }
     }
 
@@ -616,8 +632,10 @@ export async function orchestrateDualAIProvider(
         const functionCalls = modelContent.parts?.filter((p) => p.functionCall) ?? []
 
         if (functionCalls.length === 0) {
-          const finalText = modelContent.parts?.map((p) => p.text || '').join('').trim()
+          let finalText = modelContent.parts?.map((p) => p.text || '').join('').trim()
           if (!finalText) throw new Error('Gemini produced an empty response.')
+
+          finalText = unescapeMarkdownBackslashes(finalText)
 
           return {
             provider: 'gemini',
