@@ -741,19 +741,19 @@ export function generateDailyRoutine(input: DailyRoutineInput): DailyRoutineResu
       : `Limit prolonged vigorous exertion outdoors during ${plannedActivity}. Take frequent breaks.`
     recommendedTiming = cleanestWindowDescription
       ? `If outdoor presence is unavoidable, restrict to: ${cleanestWindowDescription}`
-      : 'Avoid morning temperature inversion hours (06:00–09:00) when surface-level exhaust accumulates.'
+      : 'Midday dispersion hours (11:00–15:00) generally feature better mixing than early rush hour when surface-level exhaust pools.'
     exposureMitigation = isOutdoorWorker || isVulnerable
-      ? 'Wear a fitted N95/FFP2 respirator when along major traffic arteries.'
+      ? 'Wear a fitted N95/FFP2 respirator when along major traffic arteries (consult pediatrician/physician for small children or severe COPD).'
       : 'Reduce duration of intense physical breathing.'
     rationale =
-      'Elevated PM2.5 triggers pulmonary inflammation and bronchial constriction in developing or compromised airways.'
+      'Elevated PM2.5 triggers pulmonary irritation and respiratory strain in developing or compromised airways.'
   } else if (currentAqi <= 200) {
     suitability = 'Unfavorable / Restrict'
     activityGuidance = `Unhealthy air. Cancel outdoor sports, long jogs, and unessential outdoor segments of ${plannedActivity}.`
-    recommendedTiming = 'Reschedule all outdoor physical activity to indoor climate-filtered spaces.'
-    exposureMitigation = 'Fitted N95/FFP2 respirator strongly advised for any unavoidable outdoor commute.'
+    recommendedTiming = 'Reschedule outdoor physical activity to indoor climate-filtered spaces.'
+    exposureMitigation = 'Fitted N95/FFP2 respirator advised for unavoidable outdoor transit (pediatric/clinical suitability applies).'
     rationale =
-      'Fine particulates penetrate deep into lung alveoli and enter the bloodstream, causing elevated vascular resistance and inflammatory load across the entire population.'
+      'Fine particulate concentrations elevate respiratory irritation and cardiovascular strain across sensitive groups and the general population.'
   } else {
     // 201+
     suitability = 'Hazardous'
@@ -793,7 +793,7 @@ export function getIndoorAirGuidance(input: IndoorGuidanceInput): IndoorGuidance
   let humidityNote = ''
   if (weatherContext && typeof weatherContext.relativeHumidityPercent === 'number') {
     if (weatherContext.relativeHumidityPercent > 75) {
-      humidityNote = ` High outdoor humidity (${weatherContext.relativeHumidityPercent.toFixed(0)}%) also promotes hygroscopic particulate swelling and potential mold proliferation; avoid prolonged open airing during damp periods.`
+      humidityNote = ` High ambient humidity (${weatherContext.relativeHumidityPercent.toFixed(0)}%) slows particulate evaporation and keeps moisture elevated; avoid prolonged open airing during damp periods.`
     }
   }
 
@@ -819,7 +819,7 @@ export function getIndoorAirGuidance(input: IndoorGuidanceInput): IndoorGuidance
     windowVentilationStrategy =
       'Keep windows and balcony doors closed while outdoor pollution is elevated, but do not block required building fresh-air or combustion vents. Ventilate briefly later when outdoor air quality improves.'
     airPurificationGuidance =
-      'Operate verified HEPA air purifiers continuously in bedrooms and main rooms. If a HEPA purifier is unavailable: create a designated cleaner room with closed doors, place damp towels along drafty door gaps, minimize indoor activity that resuspends dust, and consider a DIY box fan with MERV 13 filter.'
+      'Operate verified HEPA air purifiers continuously in bedrooms and main rooms. If a HEPA purifier is unavailable: create a designated interior cleaner room with closed doors, place damp towels along drafty door gaps, minimize indoor activity that resuspends dust, and use central HVAC with high-efficiency filters on recirculation.'
     indoorCombustionPrecautions =
       'Strictly avoid indoor smoking, frying, charring food, or lighting scented candles/incense. These generate intense localized PM2.5 spikes.'
     dustAndCleaningAdvice =
