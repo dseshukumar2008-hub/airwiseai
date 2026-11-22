@@ -73,6 +73,16 @@ export function generateDeterministicFallbackGuidance(params: {
     (query.includes('parent') && (query.includes('children') || query.includes('commute'))) ||
     query.includes('plan')
   ) {
+    // Extract user-specified commute distance if mentioned (e.g. "12 km" or "15km")
+    let commuteDistance = 12
+    const distMatch = query.match(/(\d+(?:\.\d+)?)\s*km/)
+    if (distMatch) {
+      const parsedDist = parseFloat(distMatch[1])
+      if (Number.isFinite(parsedDist) && parsedDist > 0 && parsedDist < 300) {
+        commuteDistance = parsedDist
+      }
+    }
+
     const routineChildren = generateDailyRoutine({
       currentAqi: aqi,
       householdProfile: 'children',
@@ -88,12 +98,12 @@ export function generateDeterministicFallbackGuidance(params: {
     const commuteImpact = calculateEnvironmentalImpact({
       baselineModeId: 'car-petrol',
       alternativeModeId: 'rail',
-      distanceKm: 10,
+      distanceKm: commuteDistance,
       tripsPerWeek: 5,
     })
     const transitAlts = compareSustainableAlternatives({
       baselineModeId: 'car-petrol',
-      distanceKm: 10,
+      distanceKm: commuteDistance,
       currentAqi: aqi,
     })
     const indoor = getIndoorAirGuidance({
@@ -102,6 +112,9 @@ export function generateDeterministicFallbackGuidance(params: {
       weatherContext: params.weatherContext,
     })
 
+    const roundTripKm = (commuteDistance * 2).toFixed(1)
+    const annualKg = commuteImpact.calculations.annualSavedKgCO2e.toFixed(1)
+
     return [
       banner,
       '',
@@ -109,37 +122,41 @@ export function generateDeterministicFallbackGuidance(params: {
       `Location: **${loc}** | US AQI: **${aqi}** (${cat})${params.pm25 != null ? ` | PM2.5: **${pm25Str}**` : ''}.`,
       params.weatherContext?.windSpeedKmh != null
         ? `Surface Wind: **${params.weatherContext.windSpeedKmh.toFixed(1)} km/h** | Relative Humidity: **${params.weatherContext.relativeHumidityPercent ?? 'N/A'}%**.`
-        : '',
+        : 'Local surface wind and humidity telemetry unavailable.',
+      `Atmospheric conditions currently restrict dispersion. Note: surface observations indicate ground-level stagnation, but upper-air temperature inversions cannot be confirmed by surface telemetry alone.`,
       '',
       `### 2. Recommendations for the Children`,
       `- **School Commute & Play:** ${routineChildren.activityGuidance}`,
-      `- **Sports & Outdoor Exertion:** Suspend high-intensity outdoor soccer/cricket. Because children inhale 2–3x more air volume relative to body mass, vigorous cardio causes deep particulate lung penetration.`,
-      `- **Indoor Alternatives:** Relocate games indoors; use gymnasiums or living room activity games with active air cleaning.`,
+      `- **Sports & Outdoor Exertion:** Suspend high-intensity outdoor soccer/cricket. Physical exertion significantly increases respiratory ventilation rate, multiplying particulate inhalation. Children should avoid vigorous outdoor play during elevated pollution.`,
+      `- **Indoor Alternatives:** Relocate games indoors; use quiet indoor play or indoor community centers. Avoid tight-fitting industrial respirators for small children unless prescribed and fitted by a pediatrician.`,
       '',
       `### 3. Recommendations for the Elderly Member`,
       `- **Outdoor Walks & Errands:** ${routineElderly.activityGuidance}`,
-      `- **Precautions:** Avoid early morning and evening peak traffic hours when ambient particulates pool near ground level. If outdoor errands are unavoidable, wear a well-fitted respirator.`,
-      `- **Indoor Alternatives:** Gentle indoor walking, stretching, or reading in an interior room with stable, filtered air.`,
+      `- **Precautions:** Avoid morning and evening rush-hour traffic hours when vehicular exhaust pools near ground level. For individuals with cardiovascular or respiratory history, follow personal physician advice and check with local public health advisories.`,
+      `- **Indoor Alternatives:** Gentle indoor walking, stretching, or reading in an interior room with stable air.`,
       '',
       `### 4. Working Parent's Commute Plan`,
-      `- **Lower-Emission Commuting:** Shift from solo petrol car to electric metro or train. Shifting avoids **${commuteImpact.calculations.singleTripSavedKgCO2e} kg CO₂e** per 10 km one-way trip (${commuteImpact.calculations.percentReduction}% reduction).`,
-      `- **Exposure Reduction During Travel:** Travel in sealed train cars or cabin-filtered buses; avoid open-air walking/cycling along traffic arteries during high AQI.`,
+      `- **Transit Evaluation:** Baseline commute evaluated at **${commuteDistance} km one-way** (${roundTripKm} km daily round-trip across 5 working days/week).`,
+      `- **Lower-Emission Options:** If electric metro/rail or high-occupancy buses are available on your route, shifting from a solo petrol car avoids **${commuteImpact.calculations.singleTripSavedKgCO2e} kg CO₂e per one-way trip** (an ${commuteImpact.calculations.percentReduction}% reduction). If public rail/bus routes are not accessible, consider organized carpooling or ridesharing to cut per-person vehicle trips.`,
+      `- **Exposure Reduction During Travel:** If driving, keep vehicle windows rolled up and switch ventilation to cabin recirculation. Avoid cycling or walking along congested traffic corridors at AQI ${aqi}.`,
       `- **Tailpipe Benefit:** ${commuteImpact.directPollutantReductionMechanism}`,
       '',
       `### 5. Indoor Air-Quality and Ventilation Plan`,
       `- **Window Strategy:** ${indoor.windowVentilationStrategy}`,
-      `- **Air Purifiers:** ${indoor.airPurificationGuidance}`,
-      `- **Combustion Safety:** ${indoor.indoorCombustionPrecautions}`,
+      `- **Air Purifiers & Low-Infiltration Guidance:** ${indoor.airPurificationGuidance}`,
+      `- **Sanctuary Room Caution:** Note that designating an interior room with closed doors limits drafts and infiltration, but does not actively scrub ultrafine particulates unless dedicated filtration is present.`,
+      `- **Combustion Safety & Ventilation:** ${indoor.indoorCombustionPrecautions} Never seal homes indefinitely or block building fresh-air intakes or combustion appliance safety vents.`,
       `- **Cleaning:** ${indoor.dustAndCleaningAdvice}`,
       '',
       `### 6. Sustainable Alternatives and Environmental Impact`,
-      `- **Weekly Commute Carbon Savings:** Saves **${commuteImpact.calculations.weeklySavedKgCO2e} kg CO₂e** across 5 working days (~${commuteImpact.calculations.annualSavedKgCO2e} kg CO₂e/yr assuming 10 km distance).`,
-      `- **Local Air Quality Protection:** Cites EEA/UK DEFRA factors. Choosing public mass transit removes localized vehicle starts and curbs ground-level diesel particulate formation.`,
+      `- **Calculation Assumptions:** Based on **${commuteDistance} km one-way** (petrol car factor: 171 g CO₂e/km vs. electric rail: 35 g CO₂e/km, UK DEFRA/EEA factors). Single one-way trip baseline: **${commuteImpact.calculations.singleTripBaseKgCO2e} kg CO₂e**; rail alternative: **${commuteImpact.calculations.singleTripAltKgCO2e} kg CO₂e**.`,
+      `- **Annual & Weekly Savings:** Across 5 commute days (10 trips/week, 48 working weeks/year), this switch avoids **${commuteImpact.calculations.weeklySavedKgCO2e} kg CO₂e weekly** (~**${annualKg} kg CO₂e annually**).`,
+      `- **Distinction between CO₂e and Local Toxics:** CO₂e reductions mitigate global greenhouse forcing, whereas shifting off combustion engines directly removes toxic street-level tailpipe nitric oxides (NOx) and fine elemental black carbon from neighborhoods.`,
       '',
       `### 7. Family Daily Action Checklist`,
-      `1. Keep windows closed during rush hour peaks; air out only briefly if forecast improves.`,
-      `2. Transition children's cardio and elderly walks indoors to a protected interior room.`,
-      `3. Commute via electric metro/rail; set vehicle or home ventilation to recirculate.`,
+      `- **Morning (07:00–09:00):** Keep windows shut; parent commutes via public transit or carpool with cabin recirculation; children take enclosed transit to school.`,
+      `- **Midday & Afternoon (12:00–16:00):** Keep children's sports indoors; elderly relative rests or exercises in interior room; avoid frying food or unvented indoor burning.`,
+      `- **Evening & Night (18:00–22:00):** Check forecast before brief airing; if AQI remains elevated, maintain closed windows and run bedroom air filtration; damp-wipe surfaces before bed.`,
       '',
       `*Sensor Transparency: ${indoor.sensorDisclaimer}*`,
     ].filter(Boolean).join('\n')
