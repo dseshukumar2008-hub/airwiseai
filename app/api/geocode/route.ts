@@ -14,14 +14,16 @@ export type GeocodeResult = {
 function readableName(item: { name?: string; display_name: string; address?: Record<string, string> }) {
   const address = item.address ?? {}
   const specific =
-    address.city ??
-    address.town ??
-    address.village ??
-    address.municipality ??
-    address.suburb ??
-    address.county ??
-    address.district ??
-    item.name
+    item.name ||
+    address.suburb ||
+    address.neighbourhood ||
+    address.residential ||
+    address.village ||
+    address.town ||
+    address.city ||
+    address.municipality ||
+    address.county ||
+    address.district
 
   const region = address.state ?? address.region
   const country = address.country
@@ -68,38 +70,67 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Enter at least 2 characters to search for a city or locality.' }, { status: 400 })
   }
 
-  const endpoint = reverse
-    ? `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude!)}&lon=${encodeURIComponent(longitude!)}&zoom=10&addressdetails=1`
-    : `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query!)}&addressdetails=1&limit=6`
-
-  try {
-    const response = await fetch(endpoint, {
-      headers: {
-        'User-Agent': 'AIRWISE-AI/1.0 (urban air quality assistant, contact: admin@airwise.ai)',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-      signal: AbortSignal.timeout(8000),
-      next: { revalidate: 300 },
-    })
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: 'The location service is temporarily busy. Please try again in a moment.' },
-        { status: 502 }
-      )
-    }
-
-    const data = await response.json()
-
-    if (reverse) {
+  if (reverse) {
+    const reverseEndpoint = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(latitude!)}&lon=${encodeURIComponent(longitude!)}&zoom=16&addressdetails=1`
+    try {
+      const response = await fetch(reverseEndpoint, {
+        headers: {
+          'User-Agent': 'AIRWISE-AI/1.0 (urban air quality assistant, contact: admin@airwise.ai)',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        signal: AbortSignal.timeout(8000),
+        next: { revalidate: 300 },
+      })
+      if (!response.ok) {
+        return NextResponse.json(
+          { error: 'The location service is temporarily busy. Please try again in a moment.' },
+          { status: 502 }
+        )
+      }
+      const data = await response.json()
       if (!data?.lat || !data?.lon) {
         return NextResponse.json({ name: null })
       }
       return NextResponse.json({ name: readableName(data) })
+    } catch {
+      return NextResponse.json(
+        { error: 'Could not reach the geocoding service. Please check your network and retry.' },
+        { status: 502 }
+      )
+    }
+  }
+
+  let searchQueries: string[] = [query!]
+  // If the query contains phonetically or dialectically varied spellings such as Kesarpalli/Kesarpalle
+  if (/kesarpall[iy]/i.test(query!)) {
+    searchQueries.push('Kesarapalle', 'Kesarapalli')
+  }
+
+  try {
+    let rawList: any[] = []
+
+    for (const q of searchQueries) {
+      const searchEndpoint = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&addressdetails=1&limit=6`
+      const response = await fetch(searchEndpoint, {
+        headers: {
+          'User-Agent': 'AIRWISE-AI/1.0 (urban air quality assistant, contact: admin@airwise.ai)',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        signal: AbortSignal.timeout(8000),
+        next: { revalidate: 300 },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (Array.isArray(data) && data.length > 0) {
+          rawList = rawList.concat(data)
+          // If we already found good results, we don't need to try all alternate queries
+          if (rawList.length >= 4) break
+        }
+      }
     }
 
     const uniqueResults = new Map<string, GeocodeResult>()
-    const rawList = Array.isArray(data) ? data : []
 
     for (const item of rawList) {
       const lat = Number(item.lat)

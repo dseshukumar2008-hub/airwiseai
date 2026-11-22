@@ -6,7 +6,14 @@ import { GoogleMap } from '@/components/google-map'
 import { BelowMapWorkspace } from '@/components/below-map-workspace'
 import { AIAirCoachTab } from '@/components/tabs/ai-air-coach-tab'
 
-type Location = { latitude: number; longitude: number; name: string; source: 'device' | 'search' }
+type Location = {
+  latitude: number
+  longitude: number
+  name: string
+  source: 'device' | 'search'
+  accuracy?: number
+  isApproximate?: boolean
+}
 type GeocodeResult = { name: string; displayName?: string; latitude: number; longitude: number; type?: string }
 type ForecastReading = { aqi: number | null; pm25: number | null; pm10: number | null; time?: string | null }
 type AirQuality = { aqi: number; category?: string; source: string; dominantPollutant?: string | null; pm25?: number | null; pm10?: number | null; updatedAt?: string | null; timezone?: string | null; forecast?: Record<number, ForecastReading> | null }
@@ -37,7 +44,8 @@ export default function Page() {
   const [audience, setAudience] = useState<string>('general')
   const [activity, setActivity] = useState<string>('school and work commute')
 
-  // Tracking latest requests to prevent race condition overruns
+  // Track manual search lock so background GPS or delayed geolocation cannot overwrite user selection
+  const manualSelectionActiveRef = useRef(false)
   const latestAqiRequestId = useRef(0)
   const latestWeatherRequestId = useRef(0)
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -51,8 +59,17 @@ export default function Page() {
     }
   }, [])
 
-  const detectLocation = useCallback(() => {
+  const detectLocation = useCallback((forceRetry = false) => {
     if (typeof window === 'undefined') return
+
+    // If user has made a manual search selection, ignore passive automatic detection unless explicitly triggered
+    if (manualSelectionActiveRef.current && !forceRetry) {
+      return
+    }
+
+    if (forceRetry) {
+      manualSelectionActiveRef.current = false
+    }
 
     if (!navigator.geolocation) {
       setLocationStatus('unsupported')
@@ -81,10 +98,29 @@ export default function Page() {
         resolved = true
         clearTimeout(timeoutWatchdog)
 
-        const { latitude, longitude } = position.coords
-        setLocation({ latitude, longitude, name: 'Your current location', source: 'device' })
+        // Prevent race condition: if user selected a manual location while GPS was resolving, do not overwrite
+        if (manualSelectionActiveRef.current && !forceRetry) {
+          return
+        }
+
+        const { latitude, longitude, accuracy } = position.coords
+        // Accuracy threshold: Wi-Fi/IP geolocations typically report accuracy > 2000m (poor/approximate)
+        const isApproximate = typeof accuracy === 'number' && accuracy > 1500
+
+        setLocation({
+          latitude,
+          longitude,
+          name: 'Your current location',
+          source: 'device',
+          accuracy,
+          isApproximate,
+        })
         setLocationStatus('ready')
-        setLocationMessage('Location detected from your device.')
+        setLocationMessage(
+          isApproximate
+            ? `Device location detected (approx. ±${Math.round(accuracy)}m). Your network/browser may be reporting city-level Wi-Fi or ISP coordinates rather than GPS.`
+            : `Device detected location. Accuracy: ±${Math.round(accuracy || 10)}m.`
+        )
 
         try {
           const response = await fetch(`/api/geocode?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`)
@@ -106,6 +142,10 @@ export default function Page() {
         resolved = true
         clearTimeout(timeoutWatchdog)
 
+        if (manualSelectionActiveRef.current && !forceRetry) {
+          return
+        }
+
         if (error.code === error.PERMISSION_DENIED) {
           setLocationStatus('denied')
           setLocationMessage('Location permission was denied. You can search for your city below or enable permission in your browser settings.')
@@ -117,7 +157,7 @@ export default function Page() {
           setLocationMessage('Your device could not determine a location. Search for your city below or check device location services.')
         }
       },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
     )
   }, [])
 
@@ -259,14 +299,16 @@ export default function Page() {
   }
 
   function selectSearchResult(result: GeocodeResult) {
+    manualSelectionActiveRef.current = true
     setLocation({
       latitude: result.latitude,
       longitude: result.longitude,
       name: result.name,
       source: 'search',
+      isApproximate: false,
     })
     setLocationStatus('ready')
-    setLocationMessage(`Showing ${result.name}.`)
+    setLocationMessage(`Selected location: ${result.name}. Coordinates: ${result.latitude.toFixed(5)}°, ${result.longitude.toFixed(5)}°.`)
     setSearchResults([])
     setQuery('')
     setSearchStatus('idle')
@@ -345,7 +387,7 @@ export default function Page() {
         </div>
         <div className="city" title="Active location">
           <MapPin size={14} />
-          <span>{location?.name ?? 'Location not set'}</span>
+          <span>{location ? `${location.name} (${location.source === 'device' ? 'Device detected' : 'Selected location'})` : 'Location not set'}</span>
         </div>
       </div>
 
@@ -388,7 +430,7 @@ export default function Page() {
           <button
             type="button"
             className="locate-action"
-            onClick={detectLocation}
+            onClick={() => detectLocation(true)}
             disabled={locationStatus === 'detecting'}
             aria-label="Detect current location"
           >
@@ -400,7 +442,7 @@ export default function Page() {
             ) : (
               <>
                 <Crosshair size={13} />
-                <span>{locationStatus === 'timeout' || locationStatus === 'unavailable' ? 'Retry detection' : 'Find my location'}</span>
+                <span>{location?.source === 'search' ? 'Detect device location' : locationStatus === 'timeout' || locationStatus === 'unavailable' ? 'Retry detection' : 'Find my location'}</span>
               </>
             )}
           </button>
@@ -492,7 +534,7 @@ export default function Page() {
                   </div>
                   <div className="map-tools-top"><div className="layer-switch" role="group" aria-label="Map pollution layer"><Layers2 size={15} />{['AQI', 'PM2.5', 'PM10'].map((item) => <button key={item} onClick={() => setLayer(item)} className={layer === item ? 'active' : ''} aria-pressed={layer === item}>{item}</button>)}</div><div className="basemap-switch" role="group" aria-label="Basemap view"><button onClick={() => setSatellite(false)} className={!satellite ? 'active' : ''} aria-pressed={!satellite}>Map</button><button onClick={() => setSatellite(true)} className={satellite ? 'active' : ''} aria-pressed={satellite}>Satellite</button></div></div>
                 </div>
-                <div className="map-controls"><button aria-label="Find my location" title="Find my location" onClick={detectLocation} disabled={locationStatus === 'detecting'}><Crosshair size={16} /></button><div className="zoom"><button aria-label="Zoom in" onClick={() => window.dispatchEvent(new Event('airwise-zoom-in'))}>+</button><button aria-label="Zoom out" onClick={() => window.dispatchEvent(new Event('airwise-zoom-out'))}>−</button></div></div>
+                <div className="map-controls"><button aria-label="Find my location" title="Find my location" onClick={() => detectLocation(true)} disabled={locationStatus === 'detecting'}><Crosshair size={16} /></button><div className="zoom"><button aria-label="Zoom in" onClick={() => window.dispatchEvent(new Event('airwise-zoom-in'))}>+</button><button aria-label="Zoom out" onClick={() => window.dispatchEvent(new Event('airwise-zoom-out'))}>−</button></div></div>
               </div>
               <div className="legend"><span className="legend-title">{layer === 'AQI' ? 'US AQI' : `${layer} · µg/m³`}</span><div className="legend-bands">{(layer === 'AQI' ? BANDS : layer === 'PM2.5' ? [['Good · 0–9', '#72bd91'], ['Moderate · 9.1–35.4', '#e3c25f'], ['Elevated · 35.5+', '#d87d77']] : [['Good · 0–54', '#72bd91'], ['Moderate · 55–154', '#e3c25f'], ['Elevated · 155+', '#d87d77']]).map(([name, color], index) => <span key={name}><i style={{ background: color }} />{name}{layer === 'AQI' && <small>{['0–50', '51–100', '101–150', '151–200', '201–300', '301+'][index]}</small>}</span>)}</div></div>
               <div className="map-footer"><span><Clock3 size={15} /> Forecast horizon</span><div className="time-switch">{[0, 3, 6, 12, 24].map((hours) => <button key={hours} onClick={() => setForecast(hours)} className={forecast === hours ? 'active' : ''}>{hours ? `+${hours}h` : 'Now'}</button>)}</div></div>
@@ -500,9 +542,22 @@ export default function Page() {
 
             <aside className="sidebar">
               <section className="detail-card">
-                <div className="selected-label"><i /> SELECTED LOCATION · {location ? (forecast ? aqi !== undefined ? `FORECAST +${forecast}H` : 'FORECAST UNAVAILABLE' : airQuality ? 'CURRENT API ESTIMATE' : 'AQI UNAVAILABLE') : 'AWAITING LOCATION'}</div>
+                <div className="selected-label">
+                  <i /> {location?.source === 'device' ? 'DEVICE DETECTED LOCATION' : 'SELECTED LOCATION'} ·{' '}
+                  {location ? (forecast ? aqi !== undefined ? `FORECAST +${forecast}H` : 'FORECAST UNAVAILABLE' : airQuality ? 'CURRENT API ESTIMATE' : 'AQI UNAVAILABLE') : 'AWAITING LOCATION'}
+                </div>
                 <h2>{location?.name ?? 'Choose a location'}</h2>
-                <p className="coordinates">{location ? `${location.latitude.toFixed(5)}°, ${location.longitude.toFixed(5)}° · ${location.source === 'device' ? 'device location' : 'manual search'}` : 'Find your location or search for a city to begin.'}</p>
+                <p className="coordinates">
+                  {location
+                    ? `${location.latitude.toFixed(5)}°, ${location.longitude.toFixed(5)}° · ${
+                        location.source === 'device'
+                          ? location.isApproximate
+                            ? 'device detected (approximate IP/Wi-Fi coordinates)'
+                            : 'device detected (GPS)'
+                          : 'manually selected location'
+                      }`
+                    : 'Find your location or search for a city to begin.'}
+                </p>
                 <div className="aqi-card">
                   <div className="aqi-meta"><span>Air Quality Index {forecast ? `(+${forecast}h)` : '(now)'}</span>{aqi !== undefined && <span className="category" style={{ '--cat': category(aqi)[1] } as React.CSSProperties}><i />{category(aqi)[0]}</span>}</div>
                   <div className="aqi-score"><strong>{apiStatus === 'loading' ? '…' : aqi ?? '—'}</strong><span>US AQI</span><small>{forecast && aqi === undefined ? 'Forecast unavailable' : forecast ? 'Open-Meteo hourly forecast' : airQuality ? 'Provider current estimate' : apiStatus === 'loading' ? 'Checking selected coordinates' : 'No current estimate'}</small></div>
