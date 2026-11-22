@@ -124,6 +124,7 @@ export function AIAirCoachTab({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [activeModel, setActiveModel] = useState<string | null>(null)
+  const [currentAssistantId, setCurrentAssistantId] = useState<string | null>(null)
 
   const audienceSelectId = useId()
   const activitySelectId = useId()
@@ -152,6 +153,7 @@ export function AIAirCoachTab({
 
     // Create placeholder assistant message for streaming
     const assistantMsgId = `assistant-${Date.now()}`
+    setCurrentAssistantId(assistantMsgId)
     const placeholderAssistant: Message = {
       id: assistantMsgId,
       role: 'assistant',
@@ -386,23 +388,28 @@ export function AIAirCoachTab({
           </div>
         ) : (
           <div className="chat-messages-container">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`chat-bubble-row ${msg.role === 'user' ? 'is-user' : 'is-assistant'}`}
-              >
-                <div className="chat-avatar">
-                  {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-                </div>
-                <div className="chat-bubble-content">
-                  <div className="chat-bubble-meta">
-                    <strong>{msg.role === 'user' ? 'You' : 'AIRWISE Copilot'}</strong>
-                    {msg.modelBadge && <span className="model-pill">{msg.modelBadge}</span>}
-                    <time>{msg.timestamp}</time>
+            {messages.map((msg) => {
+              // Hide empty assistant placeholder while loading/waiting for first content chunk
+              if (!msg.content && msg.role === 'assistant') {
+                return null
+              }
+
+              return (
+                <div
+                  key={msg.id}
+                  className={`chat-bubble-row ${msg.role === 'user' ? 'is-user' : 'is-assistant'}`}
+                >
+                  <div className="chat-avatar">
+                    {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
                   </div>
-                  <div className="chat-bubble-body">
-                    {msg.content ? (
-                      msg.role === 'assistant' ? (
+                  <div className="chat-bubble-content">
+                    <div className="chat-bubble-meta">
+                      <strong>{msg.role === 'user' ? 'You' : 'AIRWISE Copilot'}</strong>
+                      {msg.modelBadge && <span className="model-pill">{msg.modelBadge}</span>}
+                      <time>{msg.timestamp}</time>
+                    </div>
+                    <div className="chat-bubble-body">
+                      {msg.role === 'assistant' ? (
                         <div
                           className="markdown-prose"
                           dangerouslySetInnerHTML={{
@@ -411,17 +418,31 @@ export function AIAirCoachTab({
                         />
                       ) : (
                         <div className="user-prose whitespace-pre-wrap">{msg.content}</div>
-                      )
-                    ) : (
-                      <div className="chat-thinking-indicator">
-                        <RefreshCw size={15} className="animate-spin" />
-                        <span>Consulting verified environmental tools & synthesis…</span>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
+              )
+            })}
+
+            {/* Compact, professional assistant typing & loading indicator aligned with avatar */}
+            {loading && !messages.some((m) => m.role === 'assistant' && m.id === currentAssistantId && m.content.length > 0) && (
+              <div className="assistant-typing-row" aria-live="polite" aria-label="AIRWISE AI is preparing recommendations">
+                <div className="chat-avatar">
+                  <Bot size={16} />
+                </div>
+                <div className="assistant-typing-body">
+                  <div className="typing-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <RefreshCw size={13} className="animate-spin typing-spinner" />
+                  <span className="typing-label">Analyzing local air quality and preparing recommendations…</span>
+                </div>
               </div>
-            ))}
+            )}
+
             <div ref={messagesEndRef} />
           </div>
         )}
