@@ -128,9 +128,11 @@ pnpm run test:coverage    # or: npm run test:coverage
 ```
 
 ### Test Coverage Summary
-- **Domain Tools & Calculations:** 15 unit tests covering coordinate validation, EPA AQI breakpoints, vulnerable profile routines, indoor ventilation safety, commute calculations (1.632 kg single journey / 3.264 kg daily round trip), and stagnation analysis.
-- **Provider Orchestration:** 8 unit tests covering Gemini primary execution, mocked GoogleGenAI HTTP 429 quota handling, Groq LLaMA/Qwen tool execution loops, and tertiary deterministic degradation.
-- **API Endpoints Integration:** 11 integration tests covering `/api/air-quality`, `/api/weather`, `/api/geocode` (both forward search and reverse geocoding), and `/api/air-quality-assistant` (including IP rate limiting).
+- **Domain Tools & Calculations:** 16 unit tests covering coordinate validation, EPA AQI breakpoints, vulnerable profile routines, indoor ventilation safety, commute calculations (1.632 kg single journey / 3.264 kg daily round trip), stagnation analysis, and live vs. hypothetical AQI context separation.
+- **Provider Orchestration:** 13 unit tests covering Gemini primary execution, mocked GoogleGenAI HTTP 429 quota handling, Groq LLaMA/Qwen tool execution loops, 60s circuit breaker verification, timeout cleanup, and tertiary deterministic degradation with zero technical leak guarantees.
+- **Frontend Components:** 6 React component tests covering `EnvironmentalCalculator` calculations, verified transport mode factors (171, 35, 82, 0 g/km), and `SmartDailyPlannerTab` multi-factor window recommendations and plan export.
+- **API Endpoints Integration:** 15 integration tests covering `/api/air-quality`, `/api/weather`, `/api/geocode` (both forward search and reverse geocoding), upstream network failure resilience (502 status handling), and `/api/air-quality-assistant` (including IP rate limiting and friendly exception fallback).
+- **Total Test Suite:** 50 automated tests with 100% pass rate.
 
 ---
 

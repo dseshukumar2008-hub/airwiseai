@@ -306,5 +306,94 @@ describe('API Endpoints Integration', () => {
       const data = await rateLimitedRes.json()
       expect(data.error).toContain('Too many plan requests')
     })
+
+    it('returns friendly user-facing fallback when internal provider throws unhandled exception', async () => {
+      // Mock orchestrateDualAIProvider to throw an unexpected error
+      const manager = await import('@/lib/ai-provider-manager')
+      const spy = vi.spyOn(manager, 'orchestrateDualAIProvider').mockRejectedValueOnce(new Error('Fatal memory allocation failure'))
+
+      const request = new Request('http://localhost:3000/api/air-quality-assistant', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Forwarded-For': '192.168.1.150',
+        },
+        body: JSON.stringify({
+          locationName: 'Test Area',
+          aqi: 104,
+          pm25: 30.0,
+          pm10: 40.0,
+          readingLabel: 'Current estimate',
+          audience: 'general',
+          activity: 'school and work commute',
+          stream: false,
+        }),
+      })
+
+      const response = await assistantHandler(request)
+      expect(response.status).toBe(200)
+      const data = await response.json()
+      expect(data.recommendation).toContain("I'm having trouble generating a personalized response right now.")
+      expect(data.recommendation).not.toContain('Fatal')
+      expect(data.recommendation).not.toContain('Error')
+
+      spy.mockRestore()
+    })
+  })
+
+  describe('API Upstream Failure Resilience', () => {
+    it('handles Open-Meteo failure in /api/air-quality with HTTP 502 without crashing', async () => {
+      delete process.env.GOOGLE_MAPS_API_KEY
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 503,
+          statusText: 'Service Unavailable',
+        })
+      )
+
+      const request = new Request('http://localhost:3000/api/air-quality', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude: 16.5, longitude: 80.6 }),
+      })
+
+      const response = await airQualityHandler(request)
+      expect(response.status).toBe(502)
+      const data = await response.json()
+      expect(data.error).toContain('Air-quality data is unavailable')
+    })
+
+    it('handles weather API upstream timeout/error with HTTP 502', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockRejectedValue(new Error('Upstream timeout'))
+      )
+
+      const request = new Request('http://localhost:3000/api/weather', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude: 16.5, longitude: 80.6 }),
+      })
+
+      const response = await weatherHandler(request)
+      expect(response.status).toBe(502)
+      const data = await response.json()
+      expect(data.error).toContain('temporarily unavailable')
+    })
+
+    it('handles geocode upstream network error with HTTP 502', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockRejectedValue(new Error('Network unreachable'))
+      )
+
+      const request = new Request('http://localhost:3000/api/geocode?q=London')
+      const response = await geocodeHandler(request)
+      expect(response.status).toBe(502)
+      const data = await response.json()
+      expect(data.error).toContain('Could not reach the geocoding service')
+    })
   })
 })

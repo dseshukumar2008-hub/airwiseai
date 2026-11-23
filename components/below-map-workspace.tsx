@@ -116,6 +116,27 @@ export function BelowMapWorkspace({
     { key: 'impact', label: '5. Environmental Impact', icon: Scale },
   ]
 
+  const handleTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    let nextIndex = -1
+    if (e.key === 'ArrowRight') {
+      nextIndex = (currentIndex + 1) % tabs.length
+    } else if (e.key === 'ArrowLeft') {
+      nextIndex = (currentIndex - 1 + tabs.length) % tabs.length
+    } else if (e.key === 'Home') {
+      nextIndex = 0
+    } else if (e.key === 'End') {
+      nextIndex = tabs.length - 1
+    }
+
+    if (nextIndex >= 0) {
+      e.preventDefault()
+      const nextTab = tabs[nextIndex]
+      setActiveTab(nextTab.key)
+      const nextButton = document.getElementById(`tab-${nextTab.key}`)
+      nextButton?.focus()
+    }
+  }
+
   return (
     <section className="below-map-workspace" aria-label="Air quality workspace and recommendations">
       {/* FEATURE 4: COMPACT POLLUTION INTELLIGENCE DASHBOARD SECTION */}
@@ -186,7 +207,7 @@ export function BelowMapWorkspace({
       </div>
 
       <nav className="workspace-tab-nav" role="tablist" aria-label="Airwise workspace tabs">
-        {tabs.map(({ key, label, icon: Icon }) => {
+        {tabs.map(({ key, label, icon: Icon }, index) => {
           const isActive = activeTab === key
           return (
             <button
@@ -197,6 +218,7 @@ export function BelowMapWorkspace({
               id={`tab-${key}`}
               tabIndex={isActive ? 0 : -1}
               onClick={() => setActiveTab(key)}
+              onKeyDown={(e) => handleTabKeyDown(e, index)}
               className={`workspace-tab-btn ${isActive ? 'is-active' : ''}`}
             >
               <Icon size={16} />
@@ -222,6 +244,7 @@ export function BelowMapWorkspace({
             advice={advice}
             forecastHour={forecastHour}
             forecastData={airQuality?.forecast ?? null}
+            weather={weather}
             audience={audience}
             activity={activity}
           />

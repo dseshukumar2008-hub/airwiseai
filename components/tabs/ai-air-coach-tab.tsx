@@ -6,7 +6,9 @@ import DOMPurify from 'dompurify'
 import {
   ArrowRight,
   Bot,
+  Check,
   Compass,
+  Copy,
   CornerDownLeft,
   Info,
   RefreshCw,
@@ -125,6 +127,7 @@ export function AIAirCoachTab({
   const [error, setError] = useState('')
   const [activeModel, setActiveModel] = useState<string | null>(null)
   const [currentAssistantId, setCurrentAssistantId] = useState<string | null>(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const audienceSelectId = useId()
   const activitySelectId = useId()
@@ -407,6 +410,40 @@ export function AIAirCoachTab({
                       <strong>{msg.role === 'user' ? 'You' : 'AIRWISE Copilot'}</strong>
                       {msg.modelBadge && <span className="model-pill">{msg.modelBadge}</span>}
                       <time>{msg.timestamp}</time>
+                      {msg.role === 'assistant' && msg.content && (
+                        <button
+                          type="button"
+                          className="copy-message-btn"
+                          style={{
+                            marginLeft: 'auto',
+                            background: 'transparent',
+                            border: 'none',
+                            color: copiedId === msg.id ? '#10b981' : 'inherit',
+                            opacity: 0.7,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '11px',
+                          }}
+                          aria-label="Copy guidance to clipboard"
+                          title="Copy guidance"
+                          onClick={async () => {
+                            try {
+                              if (navigator?.clipboard?.writeText) {
+                                await navigator.clipboard.writeText(msg.content)
+                                setCopiedId(msg.id)
+                                setTimeout(() => setCopiedId(null), 2500)
+                              }
+                            } catch {
+                              // non-blocking
+                            }
+                          }}
+                        >
+                          {copiedId === msg.id ? <Check size={12} /> : <Copy size={12} />}
+                          <span>{copiedId === msg.id ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      )}
                     </div>
                     <div className="chat-bubble-body">
                       {msg.role === 'assistant' ? (

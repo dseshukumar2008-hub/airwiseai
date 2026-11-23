@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { validateCoordinates } from '@/lib/coordinate-validation'
 
 export const runtime = 'nodejs'
 
@@ -65,10 +66,12 @@ export async function POST(request: Request) {
   let body: { latitude?: number; longitude?: number }
   try { body = await request.json() } catch { return NextResponse.json({ error: 'A JSON coordinate pair is required.' }, { status: 400 }) }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ error: 'A JSON coordinate pair is required.' }, { status: 400 })
-  const { latitude, longitude } = body
-  if (typeof latitude !== 'number' || typeof longitude !== 'number' || !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
-    return NextResponse.json({ error: 'Coordinates are invalid.' }, { status: 400 })
+
+  const validation = validateCoordinates(body.latitude, body.longitude)
+  if (!validation.valid) {
+    return NextResponse.json({ error: validation.error }, { status: 400 })
   }
+  const { latitude, longitude } = validation
 
   const key = process.env.GOOGLE_MAPS_API_KEY
   if (key) {

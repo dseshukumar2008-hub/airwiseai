@@ -1,16 +1,19 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Bike,
   BusFront,
+  Check,
   Clock,
   Compass,
+  Copy,
   Info,
   Leaf,
   Sparkles,
   TrendingDown,
   UserCheck,
+  Wind,
 } from 'lucide-react'
 
 type ForecastItem = {
@@ -18,6 +21,13 @@ type ForecastItem = {
   aqi?: number | null
   pm25?: number | null
   pm10?: number | null
+}
+
+type WeatherData = {
+  temperatureC?: number | null
+  relativeHumidityPercent?: number | null
+  windSpeedKmh?: number | null
+  windDirectionDeg?: number | null
 }
 
 type Props = {
@@ -28,6 +38,7 @@ type Props = {
   advice: string
   forecastHour: number
   forecastData?: Record<number, ForecastItem> | null
+  weather?: WeatherData | null
   audience: string
   activity: string
 }
@@ -40,10 +51,14 @@ export function SmartDailyPlannerTab({
   advice,
   forecastHour,
   forecastData,
+  weather,
   audience,
   activity,
 }: Props) {
-  // Compute best outdoor window from forecast data
+  const [copied, setCopied] = useState(false)
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+
+  // Compute best outdoor window from forecast data, incorporating wind dynamics and temperature
   const bestOutdoorWindow = useMemo(() => {
     if (!forecastData) return null
     const entries = Object.entries(forecastData)
@@ -60,12 +75,23 @@ export function SmartDailyPlannerTab({
     }
 
     const formattedTime = minEntry.time ? minEntry.time.replace('T', ' ') : `+${minEntry.hour}h`
+    const isVentilated = weather?.windSpeedKmh != null && weather.windSpeedKmh >= 12
+    const isStagnant = weather?.windSpeedKmh != null && weather.windSpeedKmh < 6
+
+    let dispersionNote = 'Atmospheric conditions appear relatively stable.'
+    if (isVentilated) {
+      dispersionNote = `Surface breeze (~${weather.windSpeedKmh?.toFixed(1)} km/h) aids localized mixing, but does not guarantee complete dispersion.`
+    } else if (isStagnant) {
+      dispersionNote = `Surface winds are calm (<6 km/h), indicating potential ground-level pollutant stagnation.`
+    }
+
     return {
       hour: minEntry.hour,
       aqi: minEntry.aqi,
       time: formattedTime,
+      dispersionNote,
     }
-  }, [forecastData])
+  }, [forecastData, weather])
 
   // Context-aware dynamic routines based on live AQI and audience
   const routines = useMemo(() => {
@@ -175,17 +201,89 @@ export function SmartDailyPlannerTab({
         <div className="best-window-callout">
           <Sparkles size={16} />
           <div>
-            <strong>Optimal Outdoor Window:</strong> Forecast projections indicate cleaner atmospheric dispersal near <strong>{bestOutdoorWindow.time}</strong> (Estimated AQI: {bestOutdoorWindow.aqi}). Ideal for scheduling outdoor commutes or workouts.
+            <strong>Relative Outdoor Window Recommendation:</strong> Forecast projections indicate relatively favorable dispersal near <strong>{bestOutdoorWindow.time}</strong> (Projected AQI: {bestOutdoorWindow.aqi}). {bestOutdoorWindow.dispersionNote} <em>Note: Wind activity alone does not guarantee clean air; monitor real-time readings before intense exertion.</em>
           </div>
         </div>
       )}
 
       {/* Dynamic Routine Cards */}
       <div className="routines-grid-container">
-        <div className="section-subheading">
-          <Compass size={16} />
-          <h3>Targeted Daily Routines ({locationName ?? 'Local Area'})</h3>
+        <div className="section-subheading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Compass size={16} />
+            <h3>Targeted Daily Routines ({locationName ?? 'Local Area'})</h3>
+          </div>
+          <button
+            type="button"
+            className="action-btn"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              fontSize: '12px',
+              borderRadius: '6px',
+              border: '1px solid var(--border, #e2e8f0)',
+              background: copied ? '#10b981' : 'var(--card-bg, #ffffff)',
+              color: copied ? '#ffffff' : 'inherit',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+            aria-label="Copy Daily Action Plan to clipboard"
+            onClick={async () => {
+              const planLines = [
+                `AIRWISE Daily Environmental Action Plan: ${locationName ?? 'Local Coordinates'}`,
+                `Current Monitored AQI: ${aqi ?? 'N/A'} | Guidance: ${advice}`,
+                bestOutdoorWindow
+                  ? `Best Relative Window: ${bestOutdoorWindow.time} (Est. AQI ${bestOutdoorWindow.aqi}) - ${bestOutdoorWindow.dispersionNote}`
+                  : '',
+                '',
+                'Targeted Daily Routines:',
+                ...routines.map(
+                  (r) => `- [${r.title}] (${r.badge}): ${r.action} (Impact: ${r.impact})`
+                ),
+                '',
+                '*Disclaimer: Relative recommendations based on environmental algorithms; not medical guarantees.*',
+              ]
+                .filter(Boolean)
+                .join('\n')
+
+              try {
+                if (navigator?.clipboard?.writeText) {
+                  await navigator.clipboard.writeText(planLines)
+                  setCopied(true)
+                  setCopyFeedback('Plan copied to clipboard!')
+                  setTimeout(() => {
+                    setCopied(false)
+                    setCopyFeedback(null)
+                  }, 3000)
+                } else {
+                  setCopyFeedback('Clipboard access unavailable')
+                }
+              } catch {
+                setCopyFeedback('Failed to copy to clipboard')
+              }
+            }}
+          >
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+            <span>{copied ? 'Copied!' : 'Copy Daily Plan'}</span>
+          </button>
         </div>
+
+        {copyFeedback && (
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              fontSize: '12px',
+              color: copyFeedback.includes('copied') ? '#059669' : '#dc2626',
+              marginBottom: '8px',
+              fontWeight: 500,
+            }}
+          >
+            {copyFeedback}
+          </div>
+        )}
 
         <div className="card-items-list">
           {routines.map(({ icon: Icon, title, badge, badgeType, summary, action, impact }) => (
