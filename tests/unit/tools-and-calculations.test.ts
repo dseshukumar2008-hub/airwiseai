@@ -242,5 +242,35 @@ describe('Domain Tools & Calculations', () => {
       expect(result).toMatch(/indoor|window|ventilation/i)
       expect(result).toContain('Kesarpalli')
     })
+
+    it('clearly distinguishes live monitored AQI from a hypothetical scenario AQI', () => {
+      const result = generateDeterministicFallbackGuidance({
+        locationName: 'Kesarpalli, Andhra Pradesh',
+        currentAqi: 104,
+        pm25: 29.3,
+        pm10: 31.0,
+        readingLabel: 'Current estimate',
+        householdProfile: 'general',
+        plannedActivity: 'school and work commute',
+        userQuery:
+          'How should a family with a young child and an elderly person protect themselves when outdoor AQI is 165 and PM2.5 is elevated?',
+        weatherContext: {
+          temperatureC: 28,
+          relativeHumidityPercent: 83,
+          windSpeedKmh: 4.0,
+        },
+      })
+
+      // Must explicitly acknowledge monitored reading 104 and scenario 165
+      expect(result).toContain('104')
+      expect(result).toContain('165')
+      expect(result).toMatch(/monitored.*104|currently shows.*104/i)
+      expect(result).toMatch(/hypothetical.*165|recommendations are based on.*165|scenario.*165/i)
+      // Must not leak technical provider error messages
+      expect(result).not.toContain('Gemini')
+      expect(result).not.toContain('Groq')
+      expect(result).not.toContain('offline or rate-limited')
+      expect(result).toContain('Guidance generated using verified environmental calculations.')
+    })
   })
 })

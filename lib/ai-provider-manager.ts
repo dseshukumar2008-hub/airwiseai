@@ -82,6 +82,20 @@ export const SYSTEM_INSTRUCTION = [
   'You are AIRWISE AI, an intelligent, grounded Urban Air Quality and Environmental Copilot.',
   'Your mission is to provide accurate, science-based, conversational environmental guidance tailored directly to the user\'s situation.',
   '',
+  'CRITICAL: DISTINGUISHING LIVE READINGS VS. HYPOTHETICAL/USER-SUPPLIED SCENARIOS',
+  'Always maintain three distinct types of AQI context:',
+  'A. LIVE ENVIRONMENTAL DATA: The actual telemetry provided in the monitored telemetry context (actual US AQI, PM2.5, PM10, surface wind speed, humidity, and forecast).',
+  'B. USER-PROVIDED SCENARIO: AQI or PM2.5 values explicitly asked or supplied by the user in their prompt (e.g. "when outdoor AQI is 165", "what if AQI reaches 250?").',
+  'C. GENERAL ENVIRONMENTAL QUESTION: No AQI supplied in question. Use live data if available; clearly state when live data is unavailable.',
+  '',
+  'SCENARIO CONTEXT ACKNOWLEDGMENT RULE:',
+  'When the user asks a hypothetical scenario or specifies an AQI value in their question that differs from the live monitored reading:',
+  '1. Clearly acknowledge both values upfront before answering: e.g. "Your monitored location currently shows US AQI [LiveAQI] ([LiveCategory]). Since you asked about a hypothetical scenario at AQI [ScenarioAQI], the following recommendations are based on AQI [ScenarioAQI]." (or if asked about hypothetical PM2.5, clearly distinguish measured vs scenario PM2.5).',
+  '2. Base all activity, school, elderly, and ventilation recommendations on the SCENARIO AQI the user specified.',
+  '3. NEVER overwrite or describe the scenario AQI as the "current" reading of their monitored location.',
+  '4. If the user asks "What is my current AQI?", ALWAYS use the latest live monitored reading.',
+  '5. Never derive or fabricate PM2.5, PM10, temperature, humidity or wind values from AQI.',
+  '',
   'CONVERSATIONAL RESPONSE RULES (CRITICAL):',
   '1. ANSWER THE USER\'S SPECIFIC QUESTION FIRST in a direct, natural, conversational manner. Do NOT force a rigid multi-section template or unrequested sections for simple queries.',
   '2. Tailor response length to the query: concise queries get concise direct answers; only provide extended structured plans if the user explicitly asks for a daily plan, comprehensive report, family plan, or multi-member breakdown.',
@@ -606,23 +620,54 @@ export async function orchestrateDualAIProvider(
   const groqApiKey = process.env.GROQ_API_KEY?.trim()
   const groqModel = process.env.GROQ_MODEL?.trim() || 'qwen/qwen3.8-27b'
 
+  // Parse for hypothetical or scenario-specific AQI in the user query (e.g. "when outdoor AQI is 165" or "at AQI 200")
+  let scenarioAqi: number | null = null
+  let scenarioPm25: number | null = null
+  if (context.userQuery) {
+    const aqiMatch = context.userQuery.match(/(?:aqi|air quality index)\s*(?:is|of|reaches|at|=|:)?\s*(\d{1,4})/i) ||
+      context.userQuery.match(/(\d{1,4})\s*aqi/i)
+    if (aqiMatch) {
+      const parsed = parseInt(aqiMatch[1], 10)
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1000) {
+        scenarioAqi = parsed
+      }
+    }
+    const pm25Match = context.userQuery.match(/pm\s*2\.?5\s*(?:is|of|at|=|:)?\s*(\d+(?:\.\d+)?)/i)
+    if (pm25Match) {
+      const parsedPm = parseFloat(pm25Match[1])
+      if (Number.isFinite(parsedPm) && parsedPm >= 0 && parsedPm <= 2000) {
+        scenarioPm25 = parsedPm
+      }
+    }
+  }
+
   const promptContext = {
     location: context.locationName || 'Local coordinates',
     coordinates:
       typeof context.latitude === 'number' && typeof context.longitude === 'number'
         ? { latitude: context.latitude, longitude: context.longitude }
         : null,
-    currentUsAqi: context.aqi,
-    pm25MicrogramsPerCubicMeter: context.pm25,
-    pm10MicrogramsPerCubicMeter: context.pm10,
-    readingSource: context.readingLabel,
+    monitoredLiveReadings: {
+      currentUsAqi: context.aqi,
+      pm25MicrogramsPerCubicMeter: context.pm25,
+      pm10MicrogramsPerCubicMeter: context.pm10,
+      readingSource: context.readingLabel,
+      weatherTelemetry: context.weather ?? null,
+    },
+    userProvidedScenario: scenarioAqi !== null || scenarioPm25 !== null
+      ? {
+          scenarioAqi,
+          scenarioPm25,
+          instruction:
+            'The user explicitly supplied a scenario AQI/PM2.5. Acknowledge the live reading first, then provide recommendations based on the scenario values.',
+        }
+      : null,
     householdProfile: context.audience,
     plannedActivity: context.activity,
-    weatherTelemetry: context.weather ?? null,
   }
 
   const userPrompt = context.userQuery
-    ? `User Question: "${context.userQuery}"\n\nCurrent Ambient Telemetry & Profile:\n${JSON.stringify(promptContext, null, 2)}\n\nPlease answer the user's specific question directly, scientifically, and concisely. Use tools if specific calculation or verification is required.`
+    ? `User Question: "${context.userQuery}"\n\nContext:\n${JSON.stringify(promptContext, null, 2)}\n\nPlease answer the user's question directly and scientifically. If the user provided a scenario AQI/PM2.5 that differs from live readings, state both clearly (e.g. "Your monitored location currently shows US AQI ${context.aqi}. Since you asked about a hypothetical AQI of ${scenarioAqi}, I'll base recommendations on AQI ${scenarioAqi}").`
     : `Please generate a personalized environmental health and activity briefing based on the following telemetry:\n${JSON.stringify(promptContext, null, 2)}`
 
   // 1. ATTEMPT PRIMARY: Google Gemini 2.5 Flash

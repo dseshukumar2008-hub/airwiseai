@@ -55,16 +55,38 @@ export function generateDeterministicFallbackGuidance(params: {
   const aqi = params.currentAqi
   const pm25Str = params.pm25 != null ? `${params.pm25.toFixed(1)} µg/m³` : 'N/A'
 
-  // Determine category
-  let cat = 'Moderate'
-  if (aqi <= 50) cat = 'Good'
-  else if (aqi <= 100) cat = 'Moderate'
-  else if (aqi <= 150) cat = 'Unhealthy for Sensitive Groups'
-  else if (aqi <= 200) cat = 'Unhealthy'
-  else if (aqi <= 300) cat = 'Very Unhealthy'
-  else cat = 'Hazardous'
+  // Determine category helper
+  const getCategory = (val: number) => {
+    if (val <= 50) return 'Good'
+    if (val <= 100) return 'Moderate'
+    if (val <= 150) return 'Unhealthy for Sensitive Groups'
+    if (val <= 200) return 'Unhealthy'
+    if (val <= 300) return 'Very Unhealthy'
+    return 'Hazardous'
+  }
 
-  const banner = `> **AIRWISE Verified Rule-Based Response** · *Calculated directly from verified environmental algorithms while AI providers are offline or rate-limited.*`
+  // Parse for scenario-specific AQI in the user query (e.g. "when outdoor AQI is 165" or "at 200 AQI")
+  let scenarioAqi: number | null = null
+  const aqiMatch = params.userQuery?.match(/(?:aqi|air quality index)\s*(?:is|of|reaches|at|=|:)?\s*(\d{1,4})/i) ||
+    params.userQuery?.match(/(\d{1,4})\s*aqi/i)
+  if (aqiMatch) {
+    const parsed = parseInt(aqiMatch[1], 10)
+    if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1000) {
+      scenarioAqi = parsed
+    }
+  }
+
+  // Target AQI for recommendations: scenario AQI if specified, else live monitored AQI
+  const effectiveAqi = scenarioAqi ?? aqi
+  const liveCat = getCategory(aqi)
+  const effectiveCat = getCategory(effectiveAqi)
+
+  const banner = `> **AIRWISE Verified Rule-Based Response** · *Guidance generated using verified environmental calculations.*`
+
+  // Scenario acknowledgment header if user provided a distinct scenario AQI
+  const scenarioHeader = scenarioAqi !== null && scenarioAqi !== aqi
+    ? `Your monitored location currently shows US AQI ${aqi} (${liveCat}). Since you asked about a hypothetical scenario at AQI ${scenarioAqi}, the following recommendations are based on AQI ${scenarioAqi} (${effectiveCat}).\n\n`
+    : ''
 
   // 1. FAMILY MULTI-MEMBER SCENARIO / COMPREHENSIVE PLAN
   if (
@@ -84,13 +106,13 @@ export function generateDeterministicFallbackGuidance(params: {
     }
 
     const routineChildren = generateDailyRoutine({
-      currentAqi: aqi,
+      currentAqi: effectiveAqi,
       householdProfile: 'children',
       plannedActivity: 'outdoor exercise or play',
       weatherContext: params.weatherContext,
     })
     const routineElderly = generateDailyRoutine({
-      currentAqi: aqi,
+      currentAqi: effectiveAqi,
       householdProfile: 'older-adult',
       plannedActivity: 'walking or cycling',
       weatherContext: params.weatherContext,
@@ -104,10 +126,10 @@ export function generateDeterministicFallbackGuidance(params: {
     const transitAlts = compareSustainableAlternatives({
       baselineModeId: 'car-petrol',
       distanceKm: commuteDistance,
-      currentAqi: aqi,
+      currentAqi: effectiveAqi,
     })
     const indoor = getIndoorAirGuidance({
-      outdoorAqi: aqi,
+      outdoorAqi: effectiveAqi,
       outdoorPm25: params.pm25,
       weatherContext: params.weatherContext,
     })
@@ -115,11 +137,17 @@ export function generateDeterministicFallbackGuidance(params: {
     const roundTripKm = (commuteDistance * 2).toFixed(1)
     const annualKg = commuteImpact.calculations.annualSavedKgCO2e.toFixed(1)
 
+    const situationDescription = scenarioAqi !== null && scenarioAqi !== aqi
+      ? `Location: **${loc}** | Monitored Live US AQI: **${aqi}** (${liveCat})${params.pm25 != null ? ` | Measured PM2.5: **${pm25Str}**` : ''}.\nTarget Scenario AQI Evaluated: **${scenarioAqi}** (${effectiveCat}).`
+      : `Location: **${loc}** | US AQI: **${aqi}** (${liveCat})${params.pm25 != null ? ` | PM2.5: **${pm25Str}**` : ''}.`
+
     return [
       banner,
       '',
+      scenarioHeader ? scenarioHeader.trim() : null,
+      scenarioHeader ? '' : null,
       `### 1. Current Air-Quality Situation`,
-      `Location: **${loc}** | US AQI: **${aqi}** (${cat})${params.pm25 != null ? ` | PM2.5: **${pm25Str}**` : ''}.`,
+      situationDescription,
       params.weatherContext?.windSpeedKmh != null
         ? `Surface Wind: **${params.weatherContext.windSpeedKmh.toFixed(1)} km/h** | Relative Humidity: **${params.weatherContext.relativeHumidityPercent ?? 'N/A'}%**.`
         : 'Local surface wind and humidity telemetry unavailable.',
@@ -138,7 +166,7 @@ export function generateDeterministicFallbackGuidance(params: {
       `### 4. Working Parent's Commute Plan`,
       `- **Transit Evaluation:** Baseline commute evaluated at **${commuteDistance} km one-way** (${roundTripKm} km daily round-trip across 5 working days/week).`,
       `- **Lower-Emission Options:** If electric metro/rail or high-occupancy buses are available on your route, shifting from a solo petrol car avoids **${commuteImpact.calculations.singleTripSavedKgCO2e} kg CO₂e per one-way trip** (an ${commuteImpact.calculations.percentReduction}% reduction). If public rail/bus routes are not accessible, consider organized carpooling or ridesharing to cut per-person vehicle trips.`,
-      `- **Exposure Reduction During Travel:** If driving, keep vehicle windows rolled up and switch ventilation to cabin recirculation. Avoid cycling or walking along congested traffic corridors at AQI ${aqi}.`,
+      `- **Exposure Reduction During Travel:** If driving, keep vehicle windows rolled up and switch ventilation to cabin recirculation. Avoid cycling or walking along congested traffic corridors at AQI ${effectiveAqi}.`,
       `- **Tailpipe Benefit:** ${commuteImpact.directPollutantReductionMechanism}`,
       '',
       `### 5. Indoor Air-Quality and Ventilation Plan`,
@@ -165,28 +193,32 @@ export function generateDeterministicFallbackGuidance(params: {
   // 2. WINDOWS & INDOOR VENTILATION
   if (query.includes('window') || query.includes('ventil') || query.includes('indoor') || query.includes('air purifier')) {
     const indoor = getIndoorAirGuidance({
-      outdoorAqi: aqi,
+      outdoorAqi: effectiveAqi,
       outdoorPm25: params.pm25,
       weatherContext: params.weatherContext,
     })
     return [
       banner,
       '',
+      scenarioHeader ? scenarioHeader.trim() : null,
+      scenarioHeader ? '' : null,
       `### Window & Indoor Air Guidance for ${loc}`,
-      `- **Current Outdoor Air Quality:** US AQI **${aqi}** (${cat}), PM2.5 **${pm25Str}**.`,
+      scenarioAqi !== null && scenarioAqi !== aqi
+        ? `- **Target Condition Evaluated:** Scenario AQI **${effectiveAqi}** (${effectiveCat}) [Monitored Live AQI: **${aqi}** (${liveCat}), PM2.5 **${pm25Str}**].`
+        : `- **Current Outdoor Air Quality:** US AQI **${aqi}** (${liveCat}), PM2.5 **${pm25Str}**.`,
       `- **Window Strategy:** ${indoor.windowVentilationStrategy}`,
       `- **Air Purifier Recommendation:** ${indoor.airPurificationGuidance}`,
       `- **Indoor Combustion Precautions:** ${indoor.indoorCombustionPrecautions}`,
       `- **Dust & Maintenance:** ${indoor.dustAndCleaningAdvice}`,
       '',
       `*Sensor Transparency: ${indoor.sensorDisclaimer}*`,
-    ].join('\n')
+    ].filter(Boolean).join('\n')
   }
 
-  // 2. SPORTS, PLAY & OUTDOOR ACTIVITIES
+  // 3. SPORTS, PLAY & OUTDOOR ACTIVITIES
   if (query.includes('play') || query.includes('football') || query.includes('cricket') || query.includes('sport') || query.includes('outside') || query.includes('child') || query.includes('exercise')) {
     const routine = generateDailyRoutine({
-      currentAqi: aqi,
+      currentAqi: effectiveAqi,
       householdProfile: (params.householdProfile as any) || (query.includes('child') ? 'children' : 'general'),
       plannedActivity: 'outdoor exercise or play',
       weatherContext: params.weatherContext,
@@ -194,16 +226,20 @@ export function generateDeterministicFallbackGuidance(params: {
     return [
       banner,
       '',
+      scenarioHeader ? scenarioHeader.trim() : null,
+      scenarioHeader ? '' : null,
       `### Outdoor Activity Guidance for ${loc}`,
-      `- **Current Condition:** US AQI **${aqi}** (${cat}), PM2.5 **${pm25Str}**.`,
+      scenarioAqi !== null && scenarioAqi !== aqi
+        ? `- **Target Condition Evaluated:** Scenario AQI **${effectiveAqi}** (${effectiveCat}) [Monitored Live AQI: **${aqi}** (${liveCat}), PM2.5 **${pm25Str}**].`
+        : `- **Current Condition:** US AQI **${aqi}** (${liveCat}), PM2.5 **${pm25Str}**.`,
       `- **Activity Suitability:** **${routine.activityGuidance}** (${routine.suitability})`,
       `- **Timing Strategy:** ${routine.recommendedTiming}`,
       `- **Respiratory Mitigation:** ${routine.exposureMitigation}`,
       `- **Rationale:** ${routine.rationale}`,
-    ].join('\n')
+    ].filter(Boolean).join('\n')
   }
 
-  // 3. COMMUTE, EMISSIONS & TRANSIT
+  // 4. COMMUTE, EMISSIONS & TRANSIT
   if (query.includes('emiss') || query.includes('co2') || query.includes('commut') || query.includes('car') || query.includes('metro') || query.includes('transit') || query.includes('bus')) {
     const impact = calculateEnvironmentalImpact({
       baselineModeId: 'car-petrol',
@@ -214,21 +250,23 @@ export function generateDeterministicFallbackGuidance(params: {
     const alternatives = compareSustainableAlternatives({
       baselineModeId: 'car-petrol',
       distanceKm: 10,
-      currentAqi: aqi,
+      currentAqi: effectiveAqi,
     })
     return [
       banner,
       '',
+      scenarioHeader ? scenarioHeader.trim() : null,
+      scenarioHeader ? '' : null,
       `### Commute Emissions & Low-Emission Transit (10 km daily baseline)`,
-      `- **Current Ambient AQI:** US AQI **${aqi}** (${cat}).`,
+      `- **Current Ambient AQI:** US AQI **${aqi}** (${liveCat}).`,
       `- **Carbon Savings:** Shifting from a solo petrol car to electric rail saves **${impact.calculations.singleTripSavedKgCO2e} kg CO₂e** per 10 km trip (${impact.calculations.percentReduction}% reduction).`,
       `- **Weekly & Annual Impact:** Saves **${impact.calculations.weeklySavedKgCO2e} kg CO₂e** weekly (~${impact.calculations.annualSavedKgCO2e} kg CO₂e per year).`,
       `- **Tailpipe Pollution Benefits:** ${impact.directPollutantReductionMechanism}`,
       `- **Health & Active Travel Safety:** ${alternatives.advisory}`,
-    ].join('\n')
+    ].filter(Boolean).join('\n')
   }
 
-  // 4. CURRENT AQI / POLLUTANTS QUERY
+  // 5. CURRENT AQI / POLLUTANTS QUERY
   if (query.includes('aqi') || query.includes('pm2.5') || query.includes('pm10') || query.includes('current') || query.includes('level')) {
     const intelligence = analyzeEnvironmentalConditions({
       currentAqi: aqi,
@@ -242,7 +280,7 @@ export function generateDeterministicFallbackGuidance(params: {
       banner,
       '',
       `### Current Air Quality Telemetry: ${loc}`,
-      `- **US AQI:** **${aqi}** (${cat})`,
+      `- **US AQI:** **${aqi}** (${liveCat})`,
       `- **PM2.5:** **${pm25Str}**`,
       params.pm10 != null ? `- **PM10:** **${params.pm10.toFixed(1)} µg/m³**` : '',
       `- **Atmospheric Dispersion:** **${intelligence.stagnationStatus}** (${params.weatherContext?.windSpeedKmh != null ? `${params.weatherContext.windSpeedKmh.toFixed(1)} km/h wind` : 'calm'})`,
@@ -251,15 +289,15 @@ export function generateDeterministicFallbackGuidance(params: {
     ].filter(Boolean).join('\n')
   }
 
-  // 5. GENERAL COMPREHENSIVE BRIEFING (when no specific intent matches or full plan requested)
+  // 6. GENERAL COMPREHENSIVE BRIEFING (when no specific intent matches or full plan requested)
   const routine = generateDailyRoutine({
-    currentAqi: aqi,
+    currentAqi: effectiveAqi,
     householdProfile: params.householdProfile as any,
     plannedActivity: params.plannedActivity,
     weatherContext: params.weatherContext,
   })
   const indoor = getIndoorAirGuidance({
-    outdoorAqi: aqi,
+    outdoorAqi: effectiveAqi,
     outdoorPm25: params.pm25,
     weatherContext: params.weatherContext,
   })
@@ -267,12 +305,16 @@ export function generateDeterministicFallbackGuidance(params: {
   return [
     banner,
     '',
+    scenarioHeader ? scenarioHeader.trim() : null,
+    scenarioHeader ? '' : null,
     `### Environmental Health Summary for ${loc}`,
-    `- **Air Quality:** US AQI **${aqi}** (${cat}) | PM2.5: **${pm25Str}**`,
+    scenarioAqi !== null && scenarioAqi !== aqi
+      ? `- **Target Condition Evaluated:** Scenario AQI **${effectiveAqi}** (${effectiveCat}) [Monitored Live AQI: **${aqi}** (${liveCat}), PM2.5 **${pm25Str}**]`
+      : `- **Air Quality:** US AQI **${aqi}** (${liveCat}) | PM2.5: **${pm25Str}**`,
     `- **Activity Guidance:** ${routine.activityGuidance}`,
     `- **Windows & Ventilation:** ${indoor.windowVentilationStrategy}`,
     `- **Indoor Care:** ${indoor.airPurificationGuidance}`,
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 export const TRANSPORT_MODES = [
