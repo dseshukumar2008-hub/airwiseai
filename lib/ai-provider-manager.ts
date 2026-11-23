@@ -18,6 +18,28 @@ import {
   setCachedToolResult,
 } from '@/lib/ai-tools'
 
+// -------------------------------------------------------------
+// In-Memory Circuit Breaker for Gemini Quota & Transient Failures
+// -------------------------------------------------------------
+let geminiCircuitOpenUntil: number = 0
+const GEMINI_COOLDOWN_MS = 60 * 1000 // 60 seconds circuit breaker after 429 quota exhaustion
+
+export function getGeminiCircuitState(): { isOpen: boolean; remainingSeconds: number } {
+  const now = Date.now()
+  if (now < geminiCircuitOpenUntil) {
+    return { isOpen: true, remainingSeconds: Math.ceil((geminiCircuitOpenUntil - now) / 1000) }
+  }
+  return { isOpen: false, remainingSeconds: 0 }
+}
+
+export function tripGeminiCircuit(durationMs: number = GEMINI_COOLDOWN_MS): void {
+  geminiCircuitOpenUntil = Date.now() + durationMs
+}
+
+export function resetGeminiCircuit(): void {
+  geminiCircuitOpenUntil = 0
+}
+
 export type OrchestrationResult = {
   provider: 'gemini' | 'groq' | 'deterministic'
   model: string
@@ -608,9 +630,14 @@ export async function orchestrateDualAIProvider(
   let geminiFailedDueToQuotaOrNetwork = false
   let geminiErrorMessage = ''
 
-  if (context.simulateGeminiQuota) {
+  const circuit = getGeminiCircuitState()
+  if (circuit.isOpen) {
+    geminiFailedDueToQuotaOrNetwork = true
+    geminiErrorMessage = `Gemini circuit open (${circuit.remainingSeconds}s cooldown remaining)`
+  } else if (context.simulateGeminiQuota) {
     geminiFailedDueToQuotaOrNetwork = true
     geminiErrorMessage = 'Simulated Gemini HTTP 429 Quota Exhausted'
+    tripGeminiCircuit()
   } else if (geminiApiKey) {
     try {
       const ai = new GoogleGenAI({ apiKey: geminiApiKey, apiVersion: 'v1beta' })
@@ -623,34 +650,46 @@ export async function orchestrateDualAIProvider(
       while (round < maxRounds) {
         round++
 
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents,
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION,
-            tools: [
-              {
-                functionDeclarations: GROQ_OPENAI_TOOLS.map((t) => ({
-                  name: t.function.name,
-                  description: t.function.description,
-                  parameters: t.function.parameters as any,
-                })),
-              },
-            ] as any,
-            temperature: 0.2,
-            maxOutputTokens: 1200,
-          },
-        })
+        let timeoutId: NodeJS.Timeout | undefined
+        let response: any
+        try {
+          const generatePromise = ai.models.generateContent({
+            model: modelName,
+            contents,
+            config: {
+              systemInstruction: SYSTEM_INSTRUCTION,
+              tools: [
+                {
+                  functionDeclarations: GROQ_OPENAI_TOOLS.map((t) => ({
+                    name: t.function.name,
+                    description: t.function.description,
+                    parameters: t.function.parameters as any,
+                  })),
+                },
+              ] as any,
+              temperature: 0.2,
+              maxOutputTokens: 1200,
+            },
+          })
+
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('Gemini API call timed out after 12s.')), 12000)
+          })
+
+          response = await Promise.race([generatePromise, timeoutPromise])
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId)
+        }
 
         const candidate = response.candidates?.[0]
         const modelContent = candidate?.content
         if (!modelContent) throw new Error('No content returned from Gemini model.')
 
         contents.push(modelContent)
-        const functionCalls = modelContent.parts?.filter((p) => p.functionCall) ?? []
+        const functionCalls = modelContent.parts?.filter((p: any) => p.functionCall) ?? []
 
         if (functionCalls.length === 0) {
-          let finalText = modelContent.parts?.map((p) => p.text || '').join('').trim()
+          let finalText = modelContent.parts?.map((p: any) => p.text || '').join('').trim()
           if (!finalText) throw new Error('Gemini produced an empty response.')
 
           finalText = unescapeMarkdownBackslashes(finalText)
@@ -665,7 +704,7 @@ export async function orchestrateDualAIProvider(
         }
 
         const toolResponseParts = await Promise.all(
-          functionCalls.map(async (part) => {
+          functionCalls.map(async (part: any) => {
             const call = part.functionCall!
             const toolName = call.name || 'unknown'
             const toolArgs = (call.args || {}) as Record<string, unknown>
@@ -690,6 +729,11 @@ export async function orchestrateDualAIProvider(
       } else {
         geminiFailedDueToQuotaOrNetwork = true
         geminiErrorMessage = msg
+
+        // If quota exhausted (429), trip circuit breaker to protect latency and quota
+        if (status === 429 || msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
+          tripGeminiCircuit()
+        }
       }
     }
   } else {
@@ -697,9 +741,9 @@ export async function orchestrateDualAIProvider(
     geminiErrorMessage = 'Gemini API key is not configured.'
   }
 
-  // If Gemini failed with a critical Auth error and no fallback is desired, throw unless Groq is configured
+  // If Gemini failed with an auth or config error, log internally and allow Groq or deterministic fallback to handle it
   if (geminiAuthError && !groqApiKey) {
-    throw geminiAuthError
+    console.warn(`[AI Provider Manager] Gemini authentication failed: ${geminiAuthError.message}. Proceeding to deterministic fallback.`)
   }
 
   // 2. ATTEMPT SECONDARY FALLBACK: Groq API
@@ -714,7 +758,7 @@ export async function orchestrateDualAIProvider(
         text: groqRes.text,
         toolRounds: groqRes.toolRounds,
         isFallback: true,
-        providerNotice: 'Served via Groq fallback copilot while primary Gemini quota resets.',
+        providerNotice: 'Synthesized via secondary AI environmental intelligence.',
       }
     } catch (groqErr: any) {
       console.error(`[AI Provider Manager] Groq fallback failed: ${groqErr?.message || groqErr}. Falling back to deterministic engine.`)
@@ -736,11 +780,10 @@ export async function orchestrateDualAIProvider(
 
   return {
     provider: 'deterministic',
-    model: 'Rule-Based Engine (Fallback)',
+    model: 'Rule-Based Environmental Engine',
     text: fallbackText,
     toolRounds: 0,
     isFallback: true,
-    providerNotice:
-      'Google Gemini 2.5 Flash reached its daily Free Tier quota limit (20 req/day). Showing verified deterministic calculations.',
+    providerNotice: 'Computed using verified deterministic environmental algorithms.',
   }
 }

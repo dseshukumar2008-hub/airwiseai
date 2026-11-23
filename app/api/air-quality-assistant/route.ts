@@ -192,13 +192,42 @@ export async function POST(request: Request) {
       })
     }
   } catch (error: any) {
-    const message = error?.message || 'AI service encountered an unhandled error.'
-    return NextResponse.json(
-      {
-        error: message,
-        code: 'AI_PROVIDER_ERROR',
-      },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } }
-    )
+    const errorMsg = error?.message || ''
+    console.error(`[Assistant API Error] Internal provider execution failure: ${errorMsg}`)
+
+    // Friendly user-facing message that never leaks technical terms or stack traces
+    const friendlyFallback =
+      "I'm having trouble generating a personalized response right now. I can still provide general air-quality safety guidance. Please try again shortly."
+
+    const wantsStream = fields?.stream !== false
+    if (wantsStream) {
+      const encoder = new TextEncoder()
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(friendlyFallback))
+          controller.close()
+        },
+      })
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-store, no-transform',
+          'X-Content-Type-Options': 'nosniff',
+          'X-AI-Provider': 'deterministic',
+          'X-AI-Model': 'Rule-Based Environmental Engine',
+          'X-Is-Fallback': 'true',
+          'X-Provider-Notice': encodeURIComponent('General air-quality safety guidance is active.'),
+        },
+      })
+    } else {
+      return NextResponse.json({
+        recommendation: friendlyFallback,
+        provider: 'deterministic',
+        model: 'Rule-Based Environmental Engine',
+        isFallback: true,
+        toolRounds: 0,
+        providerNotice: 'General air-quality safety guidance is active.',
+      })
+    }
   }
 }
